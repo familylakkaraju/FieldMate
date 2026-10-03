@@ -46,6 +46,26 @@ FieldMate should eventually behave less like a generic chatbot and more like an 
 
 ---
 
+## Architecture Reference
+
+The companion architecture diagram for this repository is:
+
+**`FieldMate Platform Architecture Diagram.png`**
+
+Treat this README and the architecture diagram together as the current high-level source of truth.
+
+```text
+README
+  +
+FieldMate Platform Architecture Diagram.png
+  =
+Current architectural context
+```
+
+Keep the diagram aligned with the principles, component boundaries, communication paths, technology candidates, and platform responsibilities described here.
+
+---
+
 # 2. Core Product Vision
 
 FieldMate should help users:
@@ -214,6 +234,488 @@ Handover
 A landscaper may naturally use different language.
 
 The underlying platform should remain the same.
+
+---
+
+## 3.4 Reusable platform first
+
+FieldMate is the first product built on reusable platform capabilities.
+
+Common capabilities should be designed so future applications and solutions can reuse them without coupling them to the FieldMate business domain.
+
+Reusable platform capabilities include:
+
+```text
+Identity & Access
+Access Core / Policy Decision
+Commercial / Subscription / Entitlement
+AI / Agent Platform
+Voice / Speech Gateway
+Observability / Telemetry / FinOps
+Files / Evidence
+Configuration / Secrets / Feature Flags
+Notifications / Background Processing
+```
+
+FieldMate-specific business capabilities remain isolated within the FieldMate functional domain.
+
+```text
+                 Reusable Platform
+                       │
+        ┌──────────────┼──────────────┐
+        ▼              ▼              ▼
+    FieldMate      Future App A   Future App B
+      Domain          Domain          Domain
+```
+
+Do not build an abstract platform ahead of product needs. Build reusable capabilities when a real FieldMate flow requires them, while keeping their contracts product-independent.
+
+---
+
+## 3.5 Zero-cost-first execution
+
+FieldMate should always attempt to satisfy a capability using a zero-cost or already-available mechanism before invoking a metered cloud service or premium AI model.
+
+Preferred execution order:
+
+```text
+1. Device / local capability
+        ↓
+2. Deterministic application code
+        ↓
+3. Cached / previously computed result
+        ↓
+4. Existing platform capability with no incremental cost
+        ↓
+5. Small / low-cost model or service
+        ↓
+6. Premium cloud model / service only when required
+```
+
+Examples:
+
+```text
+Speech-to-Text:
+Device STT first → cloud STT fallback
+
+Text-to-Speech:
+Device TTS first → cloud TTS fallback
+
+Reasoning:
+Deterministic code first → small model → stronger reasoning model
+
+Semantic retrieval:
+PostgreSQL + pgvector first → separate vector platform only if justified
+
+Caching:
+Do not introduce Redis unless the requirement justifies it
+```
+
+Zero-cost-first does not mean sacrificing required quality, security, or usability. Select the **lowest-cost execution path that satisfies the requirement**.
+
+---
+
+## 3.6 Cost is part of routing
+
+Cost must be an input into every dynamic capability-routing decision.
+
+A model or capability router should consider:
+
+```text
+Required quality
+Required latency
+Device capability
+Network availability
+Privacy / data constraints
+Current provider availability
+Incremental cost
+User / plan usage budget
+```
+
+The router should select the cheapest acceptable execution path.
+
+This applies to:
+
+```text
+LLMs
+Speech-to-Text
+Text-to-Speech
+Vision
+Embeddings
+Retrieval
+Background processing
+External APIs
+```
+
+---
+
+## 3.7 Access Core is the centralized runtime policy authority
+
+Authentication, commercial entitlement, and resource authorization are related but distinct.
+
+FieldMate should use a centralized **Access Core / Policy Decision Layer** to answer:
+
+> Can this authenticated user perform this action on this resource using this feature under the user's current entitlement?
+
+```text
+Identity / AuthN
+      +
+Authorization / Roles
+      +
+Workspace / Resource Policy
+      +
+Commercial Entitlements
+      +
+Usage / Feature Limits
+      ↓
+Access Core
+      ↓
+ALLOW / DENY
+```
+
+Access Core must protect:
+
+```text
+Normal API requests
+AI / Agent tool calls
+Administrative operations
+Commercial feature access
+Resource-level operations
+```
+
+The same rules must apply whether an action originates from UI, API, or AI agent.
+
+---
+
+## 3.8 Commercial model is provider-independent
+
+The reusable commercial model should separate product configuration from payment providers.
+
+```text
+Product
+  ↓
+Plan
+  ↓
+Offer
+  ↓
+Feature
+  ↓
+Entitlement
+```
+
+A user's effective entitlement may originate from:
+
+```text
+Google Play
+Web Billing
+Apple later
+Promotion
+Manual / enterprise entitlement
+```
+
+Application code should ask the commercial/access platform whether a feature is available rather than embedding provider-specific subscription logic.
+
+---
+
+## 3.9 AI reasons; controlled application services execute
+
+AI models must not directly mutate application persistence.
+
+```text
+User request
+    ↓
+Agent / AI reasoning
+    ↓
+Tool / Command
+    ↓
+Access Core
+    ↓
+Application Service
+    ↓
+Domain validation
+    ↓
+Persistence
+```
+
+This applies equally to MCP-exposed tools and internally invoked tools.
+
+Tool contracts are the stable architectural boundary. MCP is an integration protocol, not the business-logic layer.
+
+---
+
+## 3.10 Fast path before agent path
+
+Not every user action should invoke an agent or LLM.
+
+Deterministic operations should use the shortest path:
+
+```text
+Client
+  ↓
+API
+  ↓
+Access Core
+  ↓
+Application Service
+  ↓
+Database
+```
+
+Examples:
+
+```text
+Complete Task button
+Start Task button
+Update a known status
+Fetch current entitlement
+Load a known Job
+```
+
+Conversational or ambiguous requests may use the agent path:
+
+```text
+Client
+  ↓
+Conversation API
+  ↓
+Agent
+  ↓
+Model Router / LLM Gateway
+  ↓
+Tool
+  ↓
+Access Core
+  ↓
+Application Service
+```
+
+This reduces latency, cost, and operational complexity.
+
+---
+
+## 3.11 Voice is a distributed capability
+
+Voice is not a single backend service.
+
+It consists of:
+
+```text
+Client Voice Runtime
++
+Optional Cloud Voice Gateway
++
+Speech AI / ML Provider
+```
+
+Client-side capabilities may include:
+
+```text
+Microphone capture
+Voice Activity Detection
+Device STT
+Device TTS
+Audio playback
+Streaming client
+Offline behaviour
+```
+
+Cloud-side capabilities may include:
+
+```text
+Cloud STT adapter
+Cloud TTS adapter
+Streaming session management
+Provider routing / fallback
+Language / locale
+Usage and cost metering
+```
+
+The actual voice-to-text conversion is performed by an STT/ASR model, and text-to-voice conversion is performed by a TTS / speech-synthesis model.
+
+Prefer device STT/TTS where quality is sufficient; use cloud speech as fallback or enhancement.
+
+---
+
+## 3.12 Real-time interaction and latency by design
+
+User-facing conversational and voice paths must minimize sequential network hops.
+
+Prefer:
+
+```text
+Streaming
+Parallel work
+Device processing
+In-process tool calls
+Cached access decisions
+Async telemetry
+Direct object-storage uploads
+```
+
+Avoid unnecessary flows such as:
+
+```text
+Agent → network MCP hop → API Gateway → Domain API
+```
+
+when the same tool can safely execute in-process.
+
+MCP-compatible tools may be exposed externally later while retaining a low-latency internal invocation path.
+
+Telemetry, cost aggregation, analytics, notifications, and similar non-critical work should normally execute asynchronously and must not block the user's response path.
+
+---
+
+## 3.13 Provider independence at meaningful boundaries
+
+Vendor-specific APIs should be isolated behind adapters where provider substitution creates real architectural value.
+
+Examples:
+
+```text
+IAiProvider
+ILLMGateway
+ISpeechToTextProvider
+ITextToSpeechProvider
+ISubscriptionProvider
+IObjectStorage
+INotificationProvider
+```
+
+Do not create abstraction solely for abstraction's sake.
+
+Use provider boundaries where they support:
+
+```text
+Cost optimization
+Fallback
+Portability
+Resilience
+Testing
+Regional choice
+Future product reuse
+```
+
+---
+
+## 3.14 Files and evidence use object storage plus business metadata
+
+Actual file bytes belong in object storage.
+
+Business metadata and associations belong in the application data model.
+
+```text
+Object Storage
+- image / video / PDF / receipt / evidence bytes
+
+PostgreSQL Metadata
+- FileId
+- WorkspaceId
+- Storage key
+- MIME type
+- checksum
+- uploader
+- timestamps
+
+File Association
+- FileId
+- EntityType
+- EntityId
+- optional StageId
+- category
+```
+
+Files may be associated with:
+
+```text
+Customer
+Job
+Task
+Task Stage
+Issue
+Quote
+Invoice
+Other future domain entities
+```
+
+Prefer secure direct client-to-object-storage uploads using short-lived signed upload authorization to avoid unnecessary backend bandwidth and latency.
+
+---
+
+## 3.15 Observability, audit, and AI FinOps from the beginning
+
+Every important execution path should be observable.
+
+Use end-to-end correlation / trace IDs across:
+
+```text
+Client
+API
+Access Core
+Agent
+LLM Gateway
+Tools
+Domain services
+Data stores
+```
+
+Capture:
+
+```text
+Logs
+Metrics
+Distributed traces
+Audit events
+Business telemetry
+Feature usage
+Model usage
+Input/output tokens
+STT/TTS usage
+Tool calls
+Latency
+Estimated AI cost
+```
+
+AI usage should be attributable, where applicable, to:
+
+```text
+Product
+User
+Workspace
+Feature
+Conversation
+Job
+Task
+Agent
+Provider
+Model
+```
+
+Cost calculations and telemetry aggregation should normally be asynchronous so they do not delay the user's interaction.
+
+---
+
+## 3.16 Logical components do not automatically mean microservices
+
+Architecture diagrams describe logical ownership and responsibility boundaries.
+
+They do not imply that every box must be independently deployed.
+
+Initial implementation may use a modular monolith or a small number of deployable units.
+
+Split capabilities into separate services only when justified by:
+
+```text
+Independent scaling
+Security isolation
+Reliability
+Deployment independence
+Clear ownership
+Performance characteristics
+Regulatory or data boundaries
+```
+
+Prefer in-process communication where it materially reduces latency and the deployment boundary provides no compensating value.
 
 ---
 
@@ -1483,39 +1985,84 @@ Do not prematurely jump into detailed implementation unless specifically request
 
 # 28. Core Product Principles Summary
 
-When unsure about a design decision, return to these principles:
+When unsure about a design decision, return to these principles and validate the decision against **`FieldMate Platform Architecture Diagram.png`**.
 
 ```text
 1. Generic domain, personalised experience.
 
-2. Multiple subscription providers,
-   one FieldMate identity and entitlement model.
+2. Build reusable platform capabilities where real product flows require them.
 
-3. Low cost and high performance by design.
+3. Multiple subscription providers,
+   one canonical FieldMate identity and entitlement model.
 
-4. AI reasons; application services execute.
+4. Access Core centrally enforces authentication context,
+   authorization, resource policy, commercial entitlements,
+   feature access, and usage limits.
 
-5. Voice and text should feel natural and easy.
+5. Zero-cost first:
+   device/local → deterministic → cached → low-cost → premium.
 
-6. Learn from ongoing work and historical context.
+6. Cost is part of routing.
+   Select the cheapest capability that meets quality,
+   latency, privacy, and reliability requirements.
 
-7. Become more useful as experience accumulates.
+7. Low latency and high performance by design.
 
-8. Support the whole lifecycle:
-   request → plan → execute → close → bill → learn.
+8. Fast deterministic path before Agent / LLM path.
 
-9. Provider independence where it creates meaningful value.
+9. AI reasons; controlled application services execute.
 
-10. Observability and cost intelligence from the beginning.
+10. Tool contracts are the stable boundary.
+    MCP is an integration protocol, not the business logic.
 
-11. Contracts before large-scale parallel implementation.
+11. Voice is distributed:
+    client voice runtime + optional cloud voice gateway
+    + STT/TTS ML providers.
 
-12. Integrate continuously rather than at the end.
+12. Prefer device STT/TTS where sufficient;
+    cloud speech is fallback/enhancement.
 
-13. Keep the first MVP narrow but end-to-end.
+13. Stream real-time interactions and avoid unnecessary
+    synchronous network hops.
 
-14. Architecture should enable future domain expansion without redesigning the platform.
+14. Provider independence where it creates meaningful value.
+
+15. Files/evidence use object storage plus domain metadata
+    and explicit entity associations.
+
+16. Observability, audit, telemetry, token usage,
+    and AI FinOps exist from the beginning.
+
+17. Telemetry and cost aggregation should not block
+    the user-facing interaction path.
+
+18. Learn from ongoing work and historical context.
+
+19. Become more useful as experience accumulates.
+
+20. Support the whole lifecycle:
+    request → plan → execute → close → bill → learn.
+
+21. Contracts before large-scale parallel implementation.
+
+22. Integrate continuously rather than at the end.
+
+23. Keep the first MVP narrow but end-to-end.
+
+24. Logical component boundaries do not automatically
+    imply microservices.
+
+25. Architecture should enable future products and domains
+    without redesigning common platform capabilities.
 ```
+
+Architecture reference:
+
+```text
+FieldMate Platform Architecture Diagram.png
+```
+
+The diagram and this README must evolve together. If a material architecture decision changes one, update the other in the same change set where practical.
 
 ---
 
