@@ -66,6 +66,16 @@ Keep the diagram aligned with the principles, component boundaries, communicatio
 
 ---
 
+## Interactive Demo Prototype
+
+[`demo/`](demo/README.md) contains a static, fully clickable, white-labelled sales prototype
+(CR-FM-DEMO-002) showing a fictional home-services business running on FieldMate: public website,
+office portal, field worker app, customer portal, simulated voice updates and AI Copilot.
+It is a front-end-only demonstration with fictional data — not production architecture — and is
+deployed to GitHub Pages by `.github/workflows/deploy-demo-pages.yml`.
+
+---
+
 # 2. Core Product Vision
 
 FieldMate should help users:

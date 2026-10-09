@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 600" width="480" height="600">
+  <rect width="480" height="600" fill="#EEF2F6"/>
+  <g transform="translate(110 40) rotate(2 130 260)">
+    <path d="M0 0h260v500l-13-10-13 10-13-10-13 10-13-10-13 10-13-10-13 10-13-10-13 10-13-10-13 10-13-10-13 10-13-10-13 10-13-10-13 10-13-10-13 10z" fill="#fff" stroke="#D0D5DD"/>
+    <text x="130" y="44" text-anchor="middle" font-family="Courier New, monospace" font-size="18" font-weight="700" fill="#17212B">HEATING DIRECT</text>
+    <text x="130" y="66" text-anchor="middle" font-family="Courier New, monospace" font-size="12" fill="#667085">Demo merchant · Brentwood</text>
+    <line x1="20" y1="84" x2="240" y2="84" stroke="#98A2B3" stroke-dasharray="4 4"/>
+    <g font-family="Courier New, monospace" font-size="13" fill="#17212B">
+      <text x="20" y="112">TRV + lockshield 15mm</text><text x="240" y="112" text-anchor="end">28.50</text>
+    </g>
+    <line x1="20" y1="132" x2="240" y2="132" stroke="#98A2B3" stroke-dasharray="4 4"/>
+    <text x="20" y="160" font-family="Courier New, monospace" font-size="15" font-weight="700" fill="#17212B">TOTAL</text>
+    <text x="240" y="160" text-anchor="end" font-family="Courier New, monospace" font-size="15" font-weight="700" fill="#17212B">£28.50</text>
+    <text x="20" y="192" font-family="Courier New, monospace" font-size="12" fill="#667085">Job ref: JOB-1038</text>
+    <text x="20" y="212" font-family="Courier New, monospace" font-size="12" fill="#667085">08/10/2026 16:40</text>
+    <text x="130" y="420" text-anchor="middle" font-family="Courier New, monospace" font-size="12" fill="#667085">DEMO RECEIPT — NOT A REAL TRANSACTION</text>
+  </g>
+</svg>

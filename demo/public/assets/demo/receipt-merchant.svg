@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 600" width="480" height="600">
+  <rect width="480" height="600" fill="#EEF2F6"/>
+  <g transform="translate(110 40) rotate(-3 130 260)">
+    <path d="M0 0h260v500l-13-10-13 10-13-10-13 10-13-10-13 10-13-10-13 10-13-10-13 10-13-10-13 10-13-10-13 10-13-10-13 10-13-10-13 10-13-10-13 10z" fill="#fff" stroke="#D0D5DD"/>
+    <text x="130" y="44" text-anchor="middle" font-family="Courier New, monospace" font-size="18" font-weight="700" fill="#17212B">ESSEX PLUMB SUPPLIES</text>
+    <text x="130" y="66" text-anchor="middle" font-family="Courier New, monospace" font-size="12" fill="#667085">Demo merchant · Trade counter</text>
+    <line x1="20" y1="84" x2="240" y2="84" stroke="#98A2B3" stroke-dasharray="4 4"/>
+    <g font-family="Courier New, monospace" font-size="13" fill="#17212B">
+      <text x="20" y="112">40mm comp. waste tee</text><text x="240" y="112" text-anchor="end">6.80</text>
+      <text x="20" y="136">40mm comp. bend x2</text><text x="240" y="136" text-anchor="end">5.40</text>
+      <text x="20" y="160">PTFE tape</text><text x="240" y="160" text-anchor="end">2.40</text>
+    </g>
+    <line x1="20" y1="180" x2="240" y2="180" stroke="#98A2B3" stroke-dasharray="4 4"/>
+    <text x="20" y="208" font-family="Courier New, monospace" font-size="15" font-weight="700" fill="#17212B">TOTAL</text>
+    <text x="240" y="208" text-anchor="end" font-family="Courier New, monospace" font-size="15" font-weight="700" fill="#17212B">£14.60</text>
+    <text x="20" y="240" font-family="Courier New, monospace" font-size="12" fill="#667085">Account: CLEARFLOW</text>
+    <text x="20" y="260" font-family="Courier New, monospace" font-size="12" fill="#667085">Job ref: JOB-1040</text>
+    <text x="20" y="280" font-family="Courier New, monospace" font-size="12" fill="#667085">09/10/2026 11:12</text>
+    <g transform="translate(40 320)" fill="#17212B">
+      <rect x="0" width="3" height="60"/><rect x="6" width="1" height="60"/><rect x="10" width="4" height="60"/><rect x="17" width="2" height="60"/><rect x="22" width="1" height="60"/><rect x="26" width="5" height="60"/><rect x="34" width="2" height="60"/><rect x="39" width="1" height="60"/><rect x="43" width="3" height="60"/><rect x="49" width="1" height="60"/><rect x="53" width="4" height="60"/><rect x="60" width="2" height="60"/><rect x="65" width="1" height="60"/><rect x="69" width="3" height="60"/><rect x="75" width="5" height="60"/><rect x="83" width="1" height="60"/><rect x="87" width="2" height="60"/><rect x="92" width="4" height="60"/><rect x="99" width="1" height="60"/><rect x="103" width="3" height="60"/><rect x="109" width="2" height="60"/><rect x="114" width="1" height="60"/><rect x="118" width="5" height="60"/><rect x="126" width="2" height="60"/><rect x="131" width="1" height="60"/><rect x="135" width="3" height="60"/><rect x="141" width="4" height="60"/><rect x="148" width="1" height="60"/><rect x="152" width="2" height="60"/><rect x="157" width="3" height="60"/><rect x="163" width="1" height="60"/><rect x="167" width="4" height="60"/><rect x="174" width="2" height="60"/>
+    </g>
+    <text x="130" y="420" text-anchor="middle" font-family="Courier New, monospace" font-size="12" fill="#667085">DEMO RECEIPT — NOT A REAL TRANSACTION</text>
+  </g>
+</svg>
