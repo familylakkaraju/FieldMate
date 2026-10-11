@@ -15,9 +15,9 @@ output "owner_username" {
   value = aws_db_instance.this.username
 }
 
-output "owner_secret_arn" {
-  description = "RDS-managed Secrets Manager secret for the owner password (read by the pipeline only)."
-  value       = aws_db_instance.this.master_user_secret[0].secret_arn
+output "owner_password_parameter" {
+  description = "SSM SecureString holding the owner password (read by the pipeline only)."
+  value       = local.owner_password_parameter
 }
 
 output "application_endpoint" {

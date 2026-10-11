@@ -1,6 +1,7 @@
 terraform {
-  # 1.10+ for S3-native state locking (use_lockfile): no DynamoDB lock table (CR: no DynamoDB initially).
-  required_version = ">= 1.10"
+  # 1.10+ for S3-native state locking (no DynamoDB lock table); 1.11+ for ephemeral values and write-only
+  # attributes (the database owner password never enters state).
+  required_version = ">= 1.11"
 
   required_providers {
     aws = {

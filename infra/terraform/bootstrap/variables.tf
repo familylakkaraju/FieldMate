@@ -9,8 +9,14 @@ variable "github_repository" {
   default     = "familylakkaraju/FieldMate"
 }
 
-variable "github_environments" {
-  description = "GitHub environments whose jobs may assume the deploy role. Protect 'prod' with required reviewers."
+variable "environments" {
+  description = "Environments: GitHub environments allowed to assume the deploy role (protect 'prod' with required reviewers), each with its own database owner password parameter."
   type        = list(string)
   default     = ["dev", "prod"]
+}
+
+variable "db_owner_password_version" {
+  description = "Increment to generate new database owner passwords (then increment the stack's variable to apply them)."
+  type        = number
+  default     = 1
 }

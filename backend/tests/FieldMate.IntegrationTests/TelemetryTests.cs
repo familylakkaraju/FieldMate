@@ -65,7 +65,7 @@ public sealed class TelemetryTests(ApiFixture fixture) : ApiTestBase(fixture)
         var expired = Tokens.CreateAccessToken(NewSubject(), expiresUtc: DateTime.UtcNow.AddHours(-1));
 
         await GetAsync("/me", token);
-        await GetAsync("/team/members", token, owner.OrganisationId);
+        await GetAsync("/me/context", token, owner.OrganisationId);
         await GetAsync("/me", expired);
 
         var rendered = Fixture.Telemetry.RenderedLines;

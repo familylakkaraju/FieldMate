@@ -34,27 +34,31 @@ module "identity" {
   microsoft_tenant_id     = var.microsoft_tenant_id
 }
 
-# Parking a dev environment (database_enabled = false) removes only the database. Cognito, API Gateway and Lambda
-# have no idle cost and are kept, so authentication identities (issuer + subject) stay valid.
+# The database is the only resource with idle cost. Non-production databases are parked by default
+# (infra/scripts/park-database.sh: final snapshot, then delete) and restored from the newest park snapshot by the
+# next deployment (db_snapshot_identifier). Cognito, API Gateway and Lambda cost nothing idle and are kept, so
+# authentication identities (issuer + subject) stay valid. database_enabled = false removes the database entirely.
 module "database" {
   source = "../modules/database"
   count  = var.database_enabled ? 1 : 0
 
-  environment           = var.environment
-  subnet_ids            = module.network.private_subnet_ids
-  security_group_id     = module.network.database_security_group_id
-  engine_version        = var.db_engine_version
-  instance_class        = var.db_instance_class
-  allocated_storage     = var.db_allocated_storage
-  max_allocated_storage = var.db_max_allocated_storage
-  multi_az              = var.db_multi_az
-  backup_retention_days = var.db_backup_retention_days
-  deletion_protection   = var.db_deletion_protection
-  skip_final_snapshot   = var.db_skip_final_snapshot
-  snapshot_identifier   = var.db_snapshot_identifier
-  apply_immediately     = var.environment != "prod"
-  enable_proxy          = var.enable_rds_proxy
-  application_username  = local.application_username
+  environment            = var.environment
+  subnet_ids             = module.network.private_subnet_ids
+  security_group_id      = module.network.database_security_group_id
+  engine_version         = var.db_engine_version
+  instance_class         = var.db_instance_class
+  allocated_storage      = var.db_allocated_storage
+  max_allocated_storage  = var.db_max_allocated_storage
+  multi_az               = var.db_multi_az
+  backup_retention_days  = var.db_backup_retention_days
+  deletion_protection    = var.db_deletion_protection
+  skip_final_snapshot    = var.db_skip_final_snapshot
+  snapshot_identifier    = var.db_snapshot_identifier
+  owner_password         = var.db_owner_password
+  owner_password_version = var.db_owner_password_version
+  apply_immediately      = var.environment != "prod"
+  enable_proxy           = var.enable_rds_proxy
+  application_username   = local.application_username
 }
 
 module "api" {

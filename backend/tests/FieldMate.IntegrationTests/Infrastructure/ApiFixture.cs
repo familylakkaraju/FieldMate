@@ -3,11 +3,16 @@ using System.Net.Http.Json;
 using FieldMate.Api.Access;
 using FieldMate.Api.Endpoints;
 using FieldMate.Api.Hosting;
+using FieldMate.Core.Access;
 using FieldMate.Core.Telemetry;
 using FieldMate.Database;
 using FieldMate.Tests.Shared;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -47,6 +52,24 @@ public sealed class CapturingTelemetrySink : ITelemetrySink
         [.. Events.Where(e => e.CorrelationId == correlationId)];
 }
 
+internal static class TestHostSettings
+{
+    public static Dictionary<string, string?> For(string appConnectionString, TestTokenIssuer tokens) => new()
+    {
+        ["FieldMate:Environment"] = "test",
+        ["Identity:Mode"] = "Oidc",
+        ["Identity:ProviderName"] = "COGNITO",
+        ["Identity:Issuer"] = TestTokenIssuer.Issuer,
+        ["Identity:Audiences:0"] = TestTokenIssuer.ClientId,
+        ["Identity:RequiredClaims:token_use"] = "access",
+        ["Identity:Oidc:SigningKeysJson"] = tokens.JwksJson,
+        ["Identity:EntryPoints:ClientId"] = TestTokenIssuer.ClientId,
+        ["Identity:EntryPoints:AuthorizationEndpoint"] = "https://auth.test.fieldmate.local/oauth2/authorize",
+        ["Database:ConnectionString"] = appConnectionString,
+    };
+}
+
+/// <summary>The real API (Program) in-process, with telemetry captured.</summary>
 public sealed class FieldMateApiFactory(string appConnectionString, TestTokenIssuer tokens) : WebApplicationFactory<Program>
 {
     public CapturingTelemetrySink Telemetry { get; } = new();
@@ -54,15 +77,11 @@ public sealed class FieldMateApiFactory(string appConnectionString, TestTokenIss
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
-        builder.UseSetting("FieldMate:Environment", "test");
-        builder.UseSetting("Identity:Mode", "Oidc");
-        builder.UseSetting("Identity:ProviderName", "COGNITO");
-        builder.UseSetting("Identity:Issuer", TestTokenIssuer.Issuer);
-        builder.UseSetting("Identity:Audiences:0", TestTokenIssuer.ClientId);
-        builder.UseSetting("Identity:Oidc:SigningKeysJson", tokens.JwksJson);
-        builder.UseSetting("Identity:EntryPoints:ClientId", TestTokenIssuer.ClientId);
-        builder.UseSetting("Identity:EntryPoints:AuthorizationEndpoint", "https://auth.test.fieldmate.local/oauth2/authorize");
-        builder.UseSetting("Database:ConnectionString", appConnectionString);
+        foreach (var (key, value) in TestHostSettings.For(appConnectionString, tokens))
+        {
+            builder.UseSetting(key, value);
+        }
+
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<ITelemetrySink>();
@@ -70,6 +89,54 @@ public sealed class FieldMateApiFactory(string appConnectionString, TestTokenIss
         });
     }
 }
+
+/// <summary>
+/// Test-only host: the production composition (services, request pipeline, foundation endpoints) plus probe routes
+/// guarded by permissions that no V00 public endpoint uses. It proves Access Core's role-permission and per-
+/// organisation behaviour without adding scaffolding routes to the public API (FM-P01).
+/// </summary>
+public sealed class AccessProbeHost : IAsyncDisposable
+{
+    public const string TeamReadProbe = "/__probe/team-read";
+
+    private readonly WebApplication _app;
+
+    private AccessProbeHost(WebApplication app)
+    {
+        _app = app;
+        Client = app.GetTestClient();
+    }
+
+    public HttpClient Client { get; }
+
+    public static async Task<AccessProbeHost> StartAsync(string appConnectionString, TestTokenIssuer tokens)
+    {
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseTestServer();
+        builder.Configuration.AddInMemoryCollection(TestHostSettings.For(appConnectionString, tokens));
+        builder.Services.AddFieldMateFoundation(builder.Configuration);
+        builder.Services.RemoveAll<ITelemetrySink>();
+        builder.Services.AddSingleton<ITelemetrySink>(new CapturingTelemetrySink());
+
+        var app = builder.Build();
+        app.UseMiddleware<RequestPipelineMiddleware>();
+        app.MapFoundationEndpoints();
+        app.MapGet(TeamReadProbe, (HttpContext http) => Results.Ok(new ProbeResponse(http.GetRequestContext().OrganisationId)))
+            .WithName("ProbeTeamRead")
+            .RequirePermission(Permissions.TeamRead);
+
+        await app.StartAsync();
+        return new AccessProbeHost(app);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Client.Dispose();
+        await _app.DisposeAsync();
+    }
+}
+
+public sealed record ProbeResponse(Guid OrganisationId);
 
 /// <summary>One migrated database and one in-process API per test class.</summary>
 public sealed class ApiFixture : IAsyncLifetime
@@ -81,6 +148,9 @@ public sealed class ApiFixture : IAsyncLifetime
     public FieldMateApiFactory Factory { get; private set; } = null!;
 
     public HttpClient Client { get; private set; } = null!;
+
+    /// <summary>Same database and token issuer as <see cref="Client"/>, plus test-only permission probes.</summary>
+    public AccessProbeHost Probe { get; private set; } = null!;
 
     public CapturingTelemetrySink Telemetry => Factory.Telemetry;
 
@@ -94,10 +164,16 @@ public sealed class ApiFixture : IAsyncLifetime
         Database = await TestDatabase.CreateAsync();
         Factory = new FieldMateApiFactory(Database.AppConnectionString, Tokens);
         Client = Factory.CreateClient();
+        Probe = await AccessProbeHost.StartAsync(Database.AppConnectionString, Tokens);
     }
 
     public async ValueTask DisposeAsync()
     {
+        if (Probe is not null)
+        {
+            await Probe.DisposeAsync();
+        }
+
         if (Factory is not null)
         {
             await Factory.DisposeAsync();

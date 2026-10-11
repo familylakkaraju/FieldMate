@@ -109,23 +109,24 @@ public sealed class OrganisationAccessTests(ApiFixture fixture) : ApiTestBase(fi
         Assert.Equal(HttpStatusCode.OK, (await GetAsync("/me/context", token, alpha.OrganisationId)).StatusCode);
     }
 
+    // Role permissions are proven through the test-only probe host (team.read: OWNER, ADMIN, MANAGER; not WORKER),
+    // so the public API carries no scaffolding route for it.
     [DatabaseTheory]
     [InlineData("OWNER", true)]
     [InlineData("ADMIN", true)]
     [InlineData("MANAGER", true)]
     [InlineData("WORKER", false)]
-    public async Task Team_members_requires_team_read(string role, bool allowed)
+    public async Task Access_core_enforces_role_permissions(string role, bool allowed)
     {
         var (_, owner) = await NewOwnerAsync();
-        var (token, _) = role == "OWNER"
-            ? await NewOwnerInSameOrgAsync(owner.OrganisationId)
-            : await NewMemberAsync(owner.OrganisationId, role);
+        var (token, _) = await NewMemberAsync(owner.OrganisationId, role);
 
-        var response = await GetAsync("/team/members", token, owner.OrganisationId);
+        var response = await ProbeAsync(token, owner.OrganisationId);
 
         if (allowed)
         {
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal(owner.OrganisationId, (await ReadAsync<ProbeResponse>(response))!.OrganisationId);
         }
         else
         {
@@ -140,28 +141,25 @@ public sealed class OrganisationAccessTests(ApiFixture fixture) : ApiTestBase(fi
         var (_, beta) = await NewOwnerAsync("Worked");
         await AcceptAsync(token, await InviteAsync(beta.OrganisationId, "WORKER"));
 
-        Assert.Equal(HttpStatusCode.OK, (await GetAsync("/team/members", token, alpha.OrganisationId)).StatusCode);
-        await AssertProblemAsync(await GetAsync("/team/members", token, beta.OrganisationId), HttpStatusCode.Forbidden, "ACCESS_DENIED");
+        Assert.Equal(HttpStatusCode.OK, (await ProbeAsync(token, alpha.OrganisationId)).StatusCode);
+        await AssertProblemAsync(await ProbeAsync(token, beta.OrganisationId), HttpStatusCode.Forbidden, "ACCESS_DENIED");
     }
 
     [DatabaseFact]
-    public async Task Team_members_only_ever_returns_the_trusted_organisations_members()
+    public async Task A_permission_held_elsewhere_never_grants_access_to_another_organisation()
     {
-        var (alphaToken, alpha) = await NewOwnerAsync("Alpha Team");
-        var (_, alphaWorker) = await NewMemberAsync(alpha.OrganisationId, "WORKER", createWorker: true);
-        var (_, beta) = await NewOwnerAsync("Beta Team");
-        var (_, betaManager) = await NewMemberAsync(beta.OrganisationId, "MANAGER");
+        var (ownerToken, _) = await NewOwnerAsync("Mine");
+        var (_, other) = await NewOwnerAsync("Not Mine");
 
-        var team = (await ReadAsync<TeamMembersResponse>(await GetAsync("/team/members", alphaToken, alpha.OrganisationId)))!;
-
-        Assert.Equal(alpha.OrganisationId, team.OrganisationId);
-        Assert.Equal(
-            new[] { alpha.MembershipId, alphaWorker.MembershipId }.Order(),
-            team.Members.Select(m => m.MembershipId).Order());
-        Assert.DoesNotContain(team.Members, m => m.UserId == beta.UserId || m.UserId == betaManager.UserId);
-        Assert.Equal(alphaWorker.WorkerId, team.Members.Single(m => m.MembershipId == alphaWorker.MembershipId).WorkerId);
+        // OWNER holds team.read in its own organisation, but has no membership in the other one.
+        await AssertProblemAsync(await ProbeAsync(ownerToken, other.OrganisationId), HttpStatusCode.Forbidden, "ORG_MEMBERSHIP_DENIED");
     }
 
-    private async Task<(string Token, OnboardingResponse Result)> NewOwnerInSameOrgAsync(Guid organisationId) =>
-        await NewMemberAsync(organisationId, "OWNER");
+    private Task<HttpResponseMessage> ProbeAsync(string token, Guid organisationId)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, AccessProbeHost.TeamReadProbe);
+        request.Headers.Authorization = new("Bearer", token);
+        request.Headers.Add("X-Organisation-Id", organisationId.ToString());
+        return Fixture.Probe.Client.SendAsync(request, TestContext.Current.CancellationToken);
+    }
 }

@@ -4,6 +4,13 @@ data "aws_region" "current" {}
 
 data "aws_caller_identity" "current" {}
 
+locals {
+  # Created by the bootstrap stack (SSM Parameter Store SecureString: free). The pipeline reads it and passes it
+  # in as an ephemeral variable, so it is never stored in Terraform state or plans. Restoring a parked database
+  # re-applies the same value, so the parameter and the database always agree.
+  owner_password_parameter = "/fieldmate/${var.environment}/database/owner-password"
+}
+
 resource "aws_db_subnet_group" "this" {
   name       = "fieldmate-postgres-${var.environment}"
   subnet_ids = var.subnet_ids
@@ -22,9 +29,10 @@ resource "aws_db_instance" "this" {
 
   db_name  = "fieldmate"
   username = "fieldmate_owner"
-  # RDS creates and rotates the owner password in Secrets Manager. Only the deployment pipeline reads it (for
-  # migrations); the API authenticates as fieldmate_app with IAM tokens.
-  manage_master_user_password         = true
+  # Owner password from Parameter Store (write-only, not in state). Only the deployment pipeline uses it, for
+  # migrations; the API authenticates as fieldmate_app with IAM tokens.
+  password_wo                         = var.owner_password
+  password_wo_version                 = var.owner_password_version
   iam_database_authentication_enabled = true
 
   db_subnet_group_name   = aws_db_subnet_group.this.name
@@ -55,6 +63,11 @@ resource "aws_db_instance" "this" {
   lifecycle {
     # A restored instance keeps working after the snapshot variable is cleared.
     ignore_changes = [snapshot_identifier]
+
+    precondition {
+      condition     = var.owner_password != null
+      error_message = "Set TF_VAR_db_owner_password from SSM parameter ${local.owner_password_parameter} (see infra/README.md)."
+    }
   }
 }
 

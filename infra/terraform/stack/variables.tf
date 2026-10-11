@@ -78,8 +78,26 @@ variable "db_skip_final_snapshot" {
 }
 
 variable "db_snapshot_identifier" {
-  type    = string
-  default = null
+  description = "Restore from this snapshot. The deploy pipeline sets it to the newest park snapshot when the database is parked."
+  type        = string
+  default     = null
+}
+
+variable "db_owner_password" {
+  description = <<-EOT
+    Value of the SSM parameter /fieldmate/<env>/database/owner-password (created by bootstrap). Ephemeral: never
+    stored in state or plan files. CI reads the parameter and sets TF_VAR_db_owner_password.
+  EOT
+  type        = string
+  sensitive   = true
+  ephemeral   = true
+  default     = null
+}
+
+variable "db_owner_password_version" {
+  description = "Increment after rotating /fieldmate/<env>/database/owner-password (bootstrap) to apply the new value."
+  type        = number
+  default     = 1
 }
 
 variable "enable_rds_proxy" {

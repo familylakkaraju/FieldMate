@@ -49,14 +49,11 @@ public static class FoundationEndpoints
             .WithName("GetChooseOrganisation")
             .RequireFieldMateUser();
 
+        // The trusted context for the selected organisation (role, permissions, worker): clients use it to show only
+        // what the user may do. Protected by Access Core like every organisation-scoped endpoint.
         app.MapGet("/me/context", GetOrganisationContext)
             .WithName("GetOrganisationContext")
             .RequirePermission(Permissions.OrganisationRead);
-
-        // The real Access Core-protected endpoint: OWNER/ADMIN/MANAGER hold team.read; WORKER does not.
-        app.MapGet("/team/members", ListTeamMembersAsync)
-            .WithName("ListTeamMembers")
-            .RequirePermission(Permissions.TeamRead);
 
         return app;
     }
@@ -160,18 +157,5 @@ public static class FoundationEndpoints
             [.. context.Permissions.Order(StringComparer.Ordinal)],
             context.CorrelationId,
             context.AuthenticationProvider));
-    }
-
-    private static async Task<Ok<TeamMembersResponse>> ListTeamMembersAsync(
-        HttpContext http, OrganisationRepository organisations, CancellationToken cancellationToken)
-    {
-        // The organisation comes only from the trusted context, never from the request.
-        var context = http.GetRequestContext();
-        var members = await organisations.ListMembersAsync(context.OrganisationId, cancellationToken);
-
-        return TypedResults.Ok(new TeamMembersResponse(
-            context.OrganisationId,
-            [.. members.Select(m => new TeamMemberResponse(
-                m.MembershipId, m.UserId, m.DisplayName, m.RoleCode, m.Status, m.JoinedAt, m.WorkerId))]));
     }
 }

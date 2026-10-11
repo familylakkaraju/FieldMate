@@ -53,14 +53,3 @@ public sealed record OrganisationContextResponse(
     IReadOnlyList<string> Permissions,
     string CorrelationId,
     string AuthenticationProvider);
-
-public sealed record TeamMemberResponse(
-    Guid MembershipId,
-    Guid UserId,
-    string? DisplayName,
-    string Role,
-    string Status,
-    DateTimeOffset? JoinedAt,
-    Guid? WorkerId);
-
-public sealed record TeamMembersResponse(Guid OrganisationId, IReadOnlyList<TeamMemberResponse> Members);

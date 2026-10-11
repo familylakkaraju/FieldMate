@@ -1,6 +1,8 @@
 # FieldMate backend (V00 Foundation)
 
 .NET 10, one API host (`fieldmate-api-{env}` on AWS Lambda, or Kestrel locally), PostgreSQL via Npgsql.
+Built to the [FieldMate Architecture Principles](../docs/architecture/FieldMate-Architecture-Principles.md) and
+[ADRs](../docs/architecture/adr/README.md); scope in [CR-FM-V00](../docs/v00/CR-FM-V00-Foundation.md).
 
 ```text
 src/FieldMate.Core       provider-neutral: identity boundary, organisation context, Access Core, onboarding,
@@ -31,8 +33,11 @@ deferred database constraint rejects any user committed without a membership.
 | `POST /identity/accept-invitation` | valid token; creates user (if new) + membership; consumes the invitation |
 | `GET /me` | FieldMate user |
 | `GET /identity/choose-organisation` | FieldMate user |
-| `GET /me/context` | organisation + `organisation.read` |
-| `GET /team/members` | organisation + `team.read` (OWNER, ADMIN, MANAGER; not WORKER) |
+| `GET /me/context` | organisation + `organisation.read`: role, permissions and worker for the selected organisation |
+
+Role-differentiated permissions (e.g. `team.read`: OWNER, ADMIN, MANAGER, not WORKER) are proven by the
+integration tests through a test-only probe host (`AccessProbeHost`), which uses the production composition plus
+a probe route. The public API carries no scaffolding endpoints.
 
 ## Local development
 

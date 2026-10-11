@@ -8,7 +8,7 @@ on:
       - 'backend/**'
       - 'infra/**'
       - '.github/workflows/backend-*.yml'
-      - '.github/workflows/dev-shutdown.yml'
+      - '.github/workflows/dev-cost-control.yml'
   workflow_call:
   workflow_dispatch:
 

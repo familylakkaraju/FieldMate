@@ -4,6 +4,10 @@ name: Backend deploy (V00)
 # dev deploys on every push to main; prod only by manual dispatch, behind the 'prod' GitHub environment's
 # required reviewers, with a database snapshot taken before migrations.
 #
+# Zero idle cost (FM-P04, ADR-006): a parked non-production database is restored from its newest park snapshot and a
+# stopped one is started; after migrations and the smoke test it is stopped again unless keep_database_running is chosen.
+# dev-cost-control.yml stops anything left running each evening and parks the database every Friday.
+#
 # Inert until configured (see infra/README.md): repository variables AWS_DEPLOY_ROLE_ARN, TF_STATE_BUCKET,
 # optional AWS_REGION; dev environment secrets SMOKE_USERNAME, SMOKE_PASSWORD; optional GOOGLE_CLIENT_SECRET,
 # MICROSOFT_CLIENT_SECRET with variables GOOGLE_CLIENT_ID, MICROSOFT_CLIENT_ID, MICROSOFT_TENANT_ID.
@@ -21,11 +25,16 @@ on:
         type: choice
         options: [dev, prod]
         default: dev
+      keep_database_running:
+        description: Non-production only - keep the database running after deployment (the evening stop still applies)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
   id-token: write
 
+# Shared with dev-cost-control.yml so a stop or park never interrupts a deployment.
 concurrency:
   group: backend-deploy-${{ inputs.environment || 'dev' }}
   cancel-in-progress: false
@@ -38,11 +47,13 @@ jobs:
     needs: ci
     if: vars.AWS_DEPLOY_ROLE_ARN != '' && vars.TF_STATE_BUCKET != ''
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
     environment: ${{ inputs.environment || 'dev' }}
     env:
       ENVIRONMENT: ${{ inputs.environment || 'dev' }}
       AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-2' }}
+      DB_INSTANCE: fieldmate-postgres-${{ inputs.environment || 'dev' }}
+      DB_OWNER_PASSWORD_PARAMETER: /fieldmate/${{ inputs.environment || 'dev' }}/database/owner-password
       TF_IN_AUTOMATION: true
       TF_INPUT: false
       TF_VAR_google_client_id: ${{ vars.GOOGLE_CLIENT_ID }}
@@ -71,6 +82,28 @@ jobs:
           terraform_version: 1.16.5
           terraform_wrapper: false
 
+      - name: Database owner password (SSM Parameter Store, ephemeral Terraform variable)
+        run: |
+          password="$(aws ssm get-parameter --name "$DB_OWNER_PASSWORD_PARAMETER" --with-decryption --query Parameter.Value --output text)"
+          echo "::add-mask::$password"
+          echo "TF_VAR_db_owner_password=$password" >> "$GITHUB_ENV"
+
+      - name: Restore point for a parked database
+        run: |
+          if aws rds describe-db-instances --db-instance-identifier "$DB_INSTANCE" > /dev/null 2>&1; then
+            echo "$DB_INSTANCE exists."
+          else
+            snapshot="$(aws rds describe-db-snapshots --snapshot-type manual \
+              --query "reverse(sort_by(DBSnapshots[?starts_with(DBSnapshotIdentifier, '${DB_INSTANCE}-park-')], &SnapshotCreateTime))[0].DBSnapshotIdentifier" \
+              --output text)"
+            if [[ -n "$snapshot" && "$snapshot" != "None" ]]; then
+              echo "Restoring $DB_INSTANCE from $snapshot."
+              echo "TF_VAR_db_snapshot_identifier=$snapshot" >> "$GITHUB_ENV"
+            else
+              echo "No park snapshot: $DB_INSTANCE will be created empty."
+            fi
+          fi
+
       - name: Terraform init
         run: >-
           terraform init
@@ -94,23 +127,22 @@ jobs:
       - name: Read outputs
         id: tf
         run: |
-          for name in api_url dbops_function_name db_instance_identifier db_owner_secret_arn user_pool_id smoke_client_id; do
+          for name in api_url dbops_function_name db_instance_identifier user_pool_id smoke_client_id; do
             echo "$name=$(terraform output -raw "$name" 2>/dev/null || true)" >> "$GITHUB_OUTPUT"
           done
 
-      - name: Ensure the database is running
+      - name: Ensure the database is available
         if: steps.tf.outputs.db_instance_identifier != ''
         run: |
-          id="${{ steps.tf.outputs.db_instance_identifier }}"
-          status="$(aws rds describe-db-instances --db-instance-identifier "$id" --query 'DBInstances[0].DBInstanceStatus' --output text)"
-          if [[ "$status" == "stopped" ]]; then aws rds start-db-instance --db-instance-identifier "$id" > /dev/null; fi
-          aws rds wait db-instance-available --db-instance-identifier "$id"
+          status="$(aws rds describe-db-instances --db-instance-identifier "$DB_INSTANCE" --query 'DBInstances[0].DBInstanceStatus' --output text)"
+          if [[ "$status" == "stopped" ]]; then aws rds start-db-instance --db-instance-identifier "$DB_INSTANCE" > /dev/null; fi
+          aws rds wait db-instance-available --db-instance-identifier "$DB_INSTANCE"
 
       - name: Snapshot before production migrations
         if: env.ENVIRONMENT == 'prod' && steps.tf.outputs.db_instance_identifier != ''
         run: |
-          snapshot="${{ steps.tf.outputs.db_instance_identifier }}-premigrate-${GITHUB_RUN_ID}"
-          aws rds create-db-snapshot --db-instance-identifier "${{ steps.tf.outputs.db_instance_identifier }}" --db-snapshot-identifier "$snapshot" > /dev/null
+          snapshot="${DB_INSTANCE}-premigrate-${GITHUB_RUN_ID}"
+          aws rds create-db-snapshot --db-instance-identifier "$DB_INSTANCE" --db-snapshot-identifier "$snapshot" > /dev/null
           aws rds wait db-snapshot-available --db-snapshot-identifier "$snapshot"
 
       - name: Migrate
@@ -118,7 +150,7 @@ jobs:
         run: >-
           bash "$GITHUB_WORKSPACE/infra/scripts/run-db-ops.sh"
           "${{ steps.tf.outputs.dbops_function_name }}"
-          "${{ steps.tf.outputs.db_owner_secret_arn }}"
+          "$DB_OWNER_PASSWORD_PARAMETER"
           '{"operation":"migrate"}'
 
       - name: Smoke test
@@ -138,3 +170,8 @@ jobs:
           fi
           aws cognito-idp admin-set-user-password --user-pool-id "$USER_POOL_ID" --username "$SMOKE_USERNAME" --password "$SMOKE_PASSWORD" --permanent
           bash "$GITHUB_WORKSPACE/infra/scripts/smoke-test.sh"
+
+      # Runs even when an earlier step failed, so a failed deployment never leaves a database running.
+      - name: Stop the database
+        if: always() && env.ENVIRONMENT != 'prod' && inputs.keep_database_running != true
+        run: bash "$GITHUB_WORKSPACE/infra/scripts/dev-database.sh" stop "$ENVIRONMENT"

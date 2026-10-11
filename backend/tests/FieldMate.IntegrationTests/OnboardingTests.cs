@@ -19,7 +19,7 @@ public sealed class OnboardingTests(ApiFixture fixture) : ApiTestBase(fixture)
         var token = Tokens.CreateAccessToken(subject, "new.person@example.test", "New Person");
         var usersBefore = await CountUsersAsync();
 
-        foreach (var path in new[] { "/me", "/identity/choose-organisation", "/me/context", "/team/members" })
+        foreach (var path in new[] { "/me", "/identity/choose-organisation", "/me/context" })
         {
             var response = await SendAsync(HttpMethod.Get, path, token, organisationId: Guid.NewGuid());
             await AssertProblemAsync(response, HttpStatusCode.Forbidden, "IDENTITY_NOT_PROVISIONED");
@@ -325,7 +325,6 @@ public sealed class OnboardingTests(ApiFixture fixture) : ApiTestBase(fixture)
         await AssertProblemAsync(await GetAsync("/me", token), HttpStatusCode.Forbidden, "NO_ACTIVE_MEMBERSHIP");
         await AssertProblemAsync(await GetAsync("/identity/choose-organisation", token), HttpStatusCode.Forbidden, "NO_ACTIVE_MEMBERSHIP");
         await AssertProblemAsync(await GetAsync("/me/context", token, owner.OrganisationId), HttpStatusCode.Forbidden, "NO_ACTIVE_MEMBERSHIP");
-        await AssertProblemAsync(await GetAsync("/team/members", token, owner.OrganisationId), HttpStatusCode.Forbidden, "NO_ACTIVE_MEMBERSHIP");
 
         // Creating a new organisation is still possible and restores a valid relationship, without a second user.
         var restored = (await ReadAsync<OnboardingResponse>(await CreateBusinessRawAsync(token, "Fresh Start")))!;

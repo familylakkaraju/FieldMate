@@ -1,13 +1,19 @@
-# One-time, per-account bootstrap (local state, run by an administrator): Terraform state bucket and the GitHub
-# Actions OIDC deploy role. No long-lived AWS access keys are created for CI.
+# One-time, per-account bootstrap (local state, run by an administrator): Terraform state bucket, the GitHub
+# Actions OIDC deploy role, and each environment's database owner password in SSM Parameter Store.
+# No long-lived AWS access keys are created for CI.
 
 terraform {
-  required_version = ">= 1.10"
+  # 1.11+ for ephemeral resources and write-only attributes: generated passwords never enter Terraform state.
+  required_version = ">= 1.11"
 
   required_providers {
     aws = {
       source  = "hashicorp/aws"
       version = "~> 6.0"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.7"
     }
   }
 }
@@ -105,7 +111,7 @@ resource "aws_iam_role" "deploy" {
       Condition = {
         StringEquals = { "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com" }
         StringLike = {
-          "token.actions.githubusercontent.com:sub" = [for env in var.github_environments : "repo:${var.github_repository}:environment:${env}"]
+          "token.actions.githubusercontent.com:sub" = [for env in var.environments : "repo:${var.github_repository}:environment:${env}"]
         }
       }
     }]
@@ -145,4 +151,62 @@ resource "aws_iam_role_policy" "deploy_iam" {
       },
     ]
   })
+}
+
+# Guardrails narrowing PowerUserAccess for secrets (ADR-008). Explicit denies always win:
+# the deploy role reads only FieldMate parameters, never writes them (bootstrap does, run by an administrator),
+# and cannot use Secrets Manager at all (FM-P03: lifting this requires an ADR).
+resource "aws_iam_role_policy" "deploy_secret_guardrails" {
+  name = "fieldmate-secret-guardrails"
+  role = aws_iam_role.deploy.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid         = "ReadOnlyFieldMateParameters"
+        Effect      = "Deny"
+        Action      = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath", "ssm:GetParameterHistory"]
+        NotResource = "arn:aws:ssm:*:${local.account_id}:parameter/fieldmate/*"
+      },
+      {
+        Sid    = "NoParameterWrites"
+        Effect = "Deny"
+        Action = [
+          "ssm:PutParameter", "ssm:DeleteParameter", "ssm:DeleteParameters",
+          "ssm:LabelParameterVersion", "ssm:UnlabelParameterVersion",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid      = "NoSecretsManager"
+        Effect   = "Deny"
+        Action   = "secretsmanager:*"
+        Resource = "*"
+      },
+    ]
+  })
+}
+
+# ---------------------------------------------------------------------------------------------------------------
+# Database owner password per environment: SSM Parameter Store SecureString (standard tier, AWS-managed aws/ssm
+# key) instead of Secrets Manager - zero cost (principle 3.17). Generated ephemerally and written write-only, so it
+# never appears in Terraform state. It lives here, outside the environment stack, so it survives parking and
+# restoring the database. Only the deployment pipeline reads it (migrations); the API uses IAM tokens.
+# Rotate: increment db_owner_password_version here, then the same variable in the environment's tfvars.
+# ---------------------------------------------------------------------------------------------------------------
+ephemeral "random_password" "db_owner" {
+  for_each = toset(var.environments)
+  length   = 40
+  special  = false # RDS forbids / ' " @ and spaces; 40 alphanumerics is about 238 bits
+}
+
+resource "aws_ssm_parameter" "db_owner_password" {
+  for_each         = toset(var.environments)
+  name             = "/fieldmate/${each.key}/database/owner-password"
+  description      = "Owner password for fieldmate-postgres-${each.key}. Read only by the deployment pipeline."
+  type             = "SecureString"
+  tier             = "Standard"
+  value_wo         = ephemeral.random_password.db_owner[each.key].result
+  value_wo_version = var.db_owner_password_version
 }

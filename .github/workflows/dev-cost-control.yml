@@ -1,0 +1,42 @@
+name: Dev cost control - stop or park database
+
+# FM-P04 / ADR-006: no paid idle non-production resource. Every evening stops a dev database left running;
+# Friday evening parks it (final snapshot, then delete) so nothing is billed beyond snapshot storage over the
+# weekend or longer idle periods. Weekly parking also prevents AWS's automatic restart of instances stopped 7 days.
+# The next deployment restores a parked database from its newest park snapshot.
+on:
+  schedule:
+    - cron: '0 19 * * 0-4,6' # 19:00 UTC Saturday-Thursday: stop
+    - cron: '0 19 * * 5'     # 19:00 UTC Friday: park
+  workflow_dispatch:
+    inputs:
+      action:
+        description: What to do with the dev database
+        type: choice
+        options: [stop, park, status]
+        default: stop
+
+permissions:
+  contents: read
+  id-token: write
+
+# Same group as backend-deploy.yml for dev: never act in the middle of a deployment.
+concurrency:
+  group: backend-deploy-dev
+  cancel-in-progress: false
+
+jobs:
+  dev-database:
+    if: vars.AWS_DEPLOY_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: dev
+    env:
+      ACTION: ${{ inputs.action || (github.event.schedule == '0 19 * * 5' && 'park' || 'stop') }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-2' }}
+      - run: bash infra/scripts/dev-database.sh "$ACTION" dev

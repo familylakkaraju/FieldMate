@@ -24,7 +24,7 @@ public sealed class DbOpsRequest
     [JsonPropertyName("createWorker")]
     public bool CreateWorker { get; set; }
 
-    /// <summary>Lambda only: the database owner password, read by the pipeline from the RDS-managed secret.
+    /// <summary>Lambda only: the database owner password, read by the pipeline from SSM Parameter Store.
     /// Never logged and never returned.</summary>
     [JsonPropertyName("password")]
     public string? Password { get; set; }

@@ -44,8 +44,20 @@ variable "skip_final_snapshot" {
   type = bool
 }
 
+variable "owner_password" {
+  description = "Value of /fieldmate/<env>/database/owner-password. Ephemeral: never written to state or plan files."
+  type        = string
+  sensitive   = true
+  ephemeral   = true
+}
+
+variable "owner_password_version" {
+  description = "Increment after rotating the owner password parameter to apply the new value."
+  type        = number
+}
+
 variable "snapshot_identifier" {
-  description = "Restore from this snapshot (used when un-parking a dev environment)."
+  description = "Restore from this snapshot (used when un-parking a parked environment)."
   type        = string
   default     = null
 }

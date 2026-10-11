@@ -30,7 +30,4 @@ internal static class NpgsqlCommandExtensions
 
     public static string? GetStringOrNull(this NpgsqlDataReader reader, int ordinal) =>
         reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
-
-    public static DateTimeOffset? GetTimestampOrNull(this NpgsqlDataReader reader, int ordinal) =>
-        reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<DateTimeOffset>(ordinal);
 }

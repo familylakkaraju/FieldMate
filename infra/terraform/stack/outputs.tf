@@ -34,6 +34,6 @@ output "db_instance_identifier" {
   value = var.database_enabled ? module.database[0].instance_identifier : null
 }
 
-output "db_owner_secret_arn" {
-  value = var.database_enabled ? module.database[0].owner_secret_arn : null
+output "db_owner_password_parameter" {
+  value = var.database_enabled ? module.database[0].owner_password_parameter : null
 }

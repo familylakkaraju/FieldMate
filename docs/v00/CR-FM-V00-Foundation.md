@@ -1,20 +1,28 @@
 # CR-FM-V00 — FieldMate V00 Foundation
 
-**Status:** Ready for Claude planning / implementation input  
-**Vertical:** V00 Foundation  
-**Workflow coverage:** Cross-cutting foundation  
+**Status:** Approved and implemented (amendments A1–A5 below); AWS environment acceptance pending\
+**Vertical:** V00 Foundation\
+**Workflow coverage:** Cross-cutting foundation\
 **Primary purpose:** Establish the minimum production-grade platform foundation required by all later FieldMate vertical slices.
+
+> **V00 must comply with [`docs/architecture/FieldMate-Architecture-Principles.md`](../architecture/FieldMate-Architecture-Principles.md).**
+> This CR does not own project-wide principles. It cites them by ID ([§5](#5-applicable-project-principles)) and
+> records only V00-specific scope, decisions and acceptance criteria. Approved project decisions are ADRs in
+> [`docs/architecture/adr/`](../architecture/adr/README.md).
+>
+> Implementation report: [`V00-Foundation-Report.md`](V00-Foundation-Report.md)
 
 ---
 
 ## 1. Authoritative references
 
-Before planning or implementation, Claude **must** review the following project artifacts and reconcile this CR against them:
+Before planning or implementation, the following project artifacts must be reviewed and this CR reconciled against them:
 
-1. `Docs/FieldMate_Master_Screen_Architecture_XRay_FINAL.xlsx`
-2. `Docs/FieldMate_Stage1_Prototype_Implementation_Plan.docx`
-3. The current completed generic FieldMate prototype in the repository.
-4. This V00 CR and the embedded reference diagrams below.
+1. [FieldMate Architecture Principles](../architecture/FieldMate-Architecture-Principles.md) and [ADRs](../architecture/adr/README.md)
+2. [`docs/FieldMate_Master_Screen_Architecture_XRay_FINAL.xlsx`](../FieldMate_Master_Screen_Architecture_XRay_FINAL.xlsx)
+3. [`docs/FieldMate_Stage1_Prototype_Implementation_Plan.docx`](../FieldMate_Stage1_Prototype_Implementation_Plan.docx)
+4. The current completed generic FieldMate prototype in the repository.
+5. This V00 CR and the embedded reference diagrams below.
 
 This CR is intentionally narrower than the full platform. It establishes the common runtime, identity, organisation context, authorisation, persistence, migrations, deployment, and minimal traceability needed before VS01.
 
@@ -101,359 +109,45 @@ Only the minimum identity, organisation, role/permission and worker scaffolding 
 
 ---
 
-# 5. Mandatory architectural principles
-
-These principles apply to V00 and must be inherited by every later FieldMate vertical.
-
-## AP-01 — Zero-cost-first
-
-Prefer designs that have **no idle cost** or the lowest practical cost.
-
-Order of preference:
-
-1. deterministic/local/client-side capability where safe;
-2. AWS/serverless pay-per-use capability;
-3. existing shared managed service;
-4. new always-on managed infrastructure only where justified by a measured requirement.
-
-Do not introduce technology merely because it is common in enterprise architectures.
-
-Every CR must state its incremental cost impact.
-
----
-
-## AP-02 — Stop or remove paid non-production resources when not in use
-
-Development/test resources that create ongoing cost must not be left running unnecessarily.
-
-Examples:
-
-- Lambda/API Gateway naturally incur little/no idle compute cost.
-- Development RDS must be stopped when practical during inactive periods.
-- Where RDS stop-duration/platform limitations make long inactivity expensive, snapshot and remove/recreate rather than leaving it running indefinitely.
-- Do not leave test environments, temporary databases, NAT gateways, RDS Proxy instances, or other hourly-cost resources active without need.
-- Automate environment shutdown/cleanup where practical.
-- Production availability requirements are handled separately and must be explicitly justified.
-
-**Default rule:** no paid idle resource survives simply because it was created.
-
----
-
-## AP-03 — High performance through simplicity
-
-Performance should come from:
-
-- simple synchronous request paths;
-- efficient PostgreSQL schemas and indexes;
-- bounded payloads;
-- minimal network hops;
-- avoiding unnecessary queues and intermediate services;
-- direct S3 upload later for file bytes;
-- caching only when measurements prove a need.
-
-Do not add Redis, OpenSearch, Step Functions, Kafka/MSK, or extra microservices speculatively.
-
----
-
-## AP-04 — Generic platform, not trade-specific architecture
-
-V00 must not contain plumbing-, electrical-, building-, landscaping-, or other industry-specific concepts.
-
-Canonical platform concepts remain generic.
-
-The same foundation must support all FieldMate organisations and future domains.
-
----
-
-## AP-05 — Provider portability / minimise AWS lock-in
-
-AWS is the initial hosting platform, not the FieldMate domain model.
-
-Application code must avoid unnecessary direct coupling to AWS-specific APIs.
-
-Use narrow adapters for:
-
-- authentication provider;
-- secrets/configuration;
-- event transport where introduced later;
-- object storage where introduced later;
-- external providers.
-
-Cognito must be replaceable by Microsoft Entra, Ping Identity, Auth0, Okta, or another standards-compliant IdP without changing FieldMate business data.
-
-Prefer standards such as:
-
-- HTTPS;
-- JSON;
-- OAuth2;
-- OIDC;
-- JWT;
-- WebAuthn;
-- SQL/PostgreSQL.
-
----
-
-## AP-06 — PostgreSQL is the application system of record
-
-Standard Amazon RDS for PostgreSQL is the primary structured store.
-
-Do **not** use Aurora initially.
-
-Do **not** use DynamoDB initially.
-
-Use relational modelling, PK/FK constraints, indexes, transactions, and selective JSONB only for genuinely flexible configuration.
-
----
-
-## AP-07 — `organisation_id` is the primary tenant boundary
-
-Every tenant-owned record must carry `organisation_id` unless it is genuinely platform-global.
-
-Tenant access must never depend only on a client-supplied organisation ID.
-
-The backend must validate authenticated user membership before establishing trusted organisation context.
-
----
-
-## AP-08 — Authentication and application identity are separate
-
-Cognito authenticates.
-
-PostgreSQL owns the canonical FieldMate application user and every application/business relationship.
-
-Cognito must **not** be the source of truth for:
-
-- organisation membership;
-- FieldMate role;
-- permissions;
-- worker ID;
-- skills;
-- subscription/entitlement;
-- business configuration;
-- customers/jobs/tasks or other domain data.
-
----
-
-## AP-09 — Provider-neutral canonical identity
-
-Do not make `cognito_sub` the canonical FieldMate user ID.
-
-Use:
-
-- `iam.user_profile` for the canonical FieldMate user;
-- `iam.authentication_identity` for provider mappings.
-
-The portable authentication identity key is conceptually:
-
-`issuer + subject`
-
-Example:
-
-```text
-iam.authentication_identity
-- id
-- user_id
-- issuer
-- subject
-- provider
-- identity_type
-- email_at_link_time
-- created_at
-- last_seen_at
-```
-
-This supports migration from Cognito to Entra/Ping/Auth0/etc. without changing the canonical FieldMate user or business relationships.
-
----
-
-## AP-10 — One Cognito User Pool initially
-
-Use one FieldMate Cognito User Pool, not one pool per organisation or authentication method.
-
-Supported/anticipated authentication methods:
-
-- Cognito-native username/password;
-- Google federation;
-- Microsoft/Entra federation through OIDC/SAML as appropriate;
-- WebAuthn/passkeys;
-- future standards-based providers.
-
-MFA is a policy/capability of the authentication route, **not another user pool**.
-
-For federated authentication, upstream IdP MFA should normally be respected rather than forcing duplicate MFA in Cognito.
-
-For native Cognito username/password, Cognito may enforce configured MFA.
-
----
-
-## AP-11 — FieldMate never stores passwords
-
-Do not build a custom FieldMate password database.
-
-Cognito owns native credentials initially.
-
-Google/Microsoft/etc. own their respective upstream credentials.
-
-If Cognito is replaced later:
-
-- federated users are re-linked through the new broker;
-- native password users may use JIT migration or password reset;
-- canonical FieldMate `user_id` remains unchanged.
-
----
-
-## AP-12 — Identity provider abstraction
-
-Create a narrow conceptual abstraction around authentication-provider-specific behaviour.
-
-Example responsibilities:
-
-```text
-IdentityProviderAdapter
-- validateToken(...)
-- resolveSubject(...)
-- getClaims(...)
-- beginPasswordReset(...)
-- logout(...)
-```
-
-Do not expose Cognito-specific types throughout application/domain code.
-
-Access Core must work with a trusted FieldMate principal, not with Cognito-specific concepts.
-
----
-
-## AP-13 — Access Core is central
-
-Authentication answers:
-
-> Who authenticated?
-
-Access Core answers:
-
-> May this FieldMate user perform this action in this organisation on this resource?
-
-The normal path is:
-
-```text
-JWT
-  -> token validation
-  -> authentication identity resolution
-  -> FieldMate user
-  -> organisation membership validation
-  -> trusted request context
-  -> Access Core
-  -> application handler
-```
-
----
-
-## AP-14 — AI never bypasses application services
-
-Although AI is outside V00, the foundation must preserve this rule:
-
-AI/agents may reason and propose actions, but all mutations later go through controlled application services and Access Core.
-
-No direct LLM-to-database mutation path.
-
----
-
-## AP-15 — Minimal observability
-
-Do not create a “log everything” architecture.
-
-For tenant-scoped requests, the minimum trace context is:
-
-- `organisationId`;
-- `correlationId`;
-- `userId` / actor where authenticated;
-- `resourceId` where relevant;
-- operation name;
-- error code where failed;
-- essential latency;
-- cost metadata only where relevant.
-
-Avoid:
-
-- full request/response logging;
-- PII payload dumping;
-- method entry/exit logs;
-- duplicate logs at every layer;
-- full AI prompts/responses in operational logs later;
-- successful health-check noise.
-
----
-
-## AP-16 — Organisation-level traceability
-
-Every tenant-scoped request, domain event, audit record, AI usage record and cost record introduced later must be attributable to `organisationId`.
-
-`organisationId` must be propagated as structured metadata, not embedded only in free text.
-
-Platform/pre-auth operations may use:
-
-```text
-organisationId = null
-scope = PLATFORM
-```
-
----
-
-## AP-17 — Explicit log retention and automatic cleanup
-
-Operational logs are temporary diagnostic data.
-
-Default posture:
-
-- normal operational logs: 7–14 days;
-- error logs: around 30 days if needed;
-- temporary debug logs: 1–3 days;
-- successful health-check logs: avoid where possible;
-- business/audit history: separate intentional persistence.
-
-No CloudWatch log group should default to indefinite retention unless explicitly approved.
-
-Use managed retention rather than creating a cleanup Lambda solely to delete CloudWatch logs.
-
----
-
-## AP-18 — No duplicate telemetry
-
-Do not independently log the same successful state change in API Gateway, handler, application service, repository and database.
-
-Prefer one useful structured business event plus error telemetry.
-
----
-
-## AP-19 — Infrastructure as Code
-
-All AWS infrastructure required by V00 must be reproducible through approved IaC.
-
-Do not create undocumented console-only infrastructure.
-
-IaC should cover at least:
-
-- Cognito;
-- API Gateway;
-- Lambda;
-- RDS/PostgreSQL;
-- networking/security groups if required;
-- log groups and retention;
-- secrets/parameters;
-- IAM;
-- optional RDS Proxy where enabled.
-
----
-
-## AP-20 — Capability-first modular monolith initially
-
-Logical components do not imply separate deployable microservices.
-
-Use one shared synchronous API Lambda initially.
-
-Keep code modular by capability/application service.
-
-Split deployments only when scale, isolation, security, runtime, or ownership genuinely require it.
+# 5. Applicable project principles
+
+V00 applies the following principles from the
+[FieldMate Architecture Principles](../architecture/FieldMate-Architecture-Principles.md). Their text is not
+repeated here.
+
+| Principle | V00 application |
+|---|---|
+| FM-P01 Keep it simple | One API host, minimal endpoints, no speculative services |
+| FM-P02 Zero-cost-first · FM-P03 Free alternative first | No NAT, no Lambda authorizer, Parameter Store instead of Secrets Manager (ADR-008) |
+| FM-P04 No unnecessary idle non-production cost · FM-P05 Environment-aware architecture | Dev database stopped when idle and parked weekly; RDS Proxy production-only (ADR-006) |
+| FM-P07 High performance through simplicity | One synchronous path; indexed lookups; bounded payloads |
+| FM-P12 Generic platform | No trade-specific concepts; neutral demo organisations |
+| FM-P14 PostgreSQL-first · FM-P15 Organisation is the tenant boundary | RDS PostgreSQL, relational schema, `organisation_id` everywhere tenant-owned (ADR-001) |
+| FM-P17–FM-P20 Identity principles (incl. **FM-P18 No orphan FieldMate users**) | Provider-neutral identity, onboarding-only user creation (ADR-002, ADR-004) |
+| FM-P21 Access Core is central | Every organisation-scoped endpoint passes Access Core |
+| FM-P25 Provider portability | Cognito and AWS SDK code confined to `FieldMate.Aws` and Terraform |
+| FM-P29 Modular monolith before microservices | One shared API Lambda (ADR-003) |
+| FM-P33 Infrastructure as Code · FM-P34 New technology requires justification | Terraform (ADR-007); every V00 service justified in the report |
+| FM-P35–FM-P39 Observability principles | One structured record per request, explicit retention (ADR-005) |
+| FM-P40 Security is explicit and proportionate | Least privilege, IAM DB auth, parameterised SQL, documented weaknesses |
+
+## 5.1 Former AP references
+
+Earlier drafts of this CR defined principles AP-01…AP-20 inline. They are now project principles or ADRs; code
+comments that cite `CR AP-nn` resolve through this table.
+
+| Former | Now | Former | Now |
+|---|---|---|---|
+| AP-01 Zero-cost-first | FM-P02 | AP-11 FieldMate never stores passwords | FM-P20 |
+| AP-02 Stop/remove paid non-production resources | FM-P04, ADR-006 | AP-12 Identity provider abstraction | FM-P19, ADR-004 |
+| AP-03 High performance through simplicity | FM-P07 | AP-13 Access Core is central | FM-P21 |
+| AP-04 Generic platform | FM-P12 | AP-14 AI never bypasses application services | FM-P23 |
+| AP-05 Provider portability | FM-P25, FM-P26 | AP-15 Minimal observability | FM-P35, ADR-005 |
+| AP-06 PostgreSQL is the system of record | FM-P14, ADR-001 | AP-16 Organisation-level traceability | FM-P36 |
+| AP-07 `organisation_id` is the tenant boundary | FM-P15 | AP-17 Explicit log retention and cleanup | FM-P37 |
+| AP-08 Authentication and application identity are separate | FM-P17 | AP-18 No duplicate telemetry | FM-P38 |
+| AP-09 Provider-neutral canonical identity | FM-P19, ADR-004 | AP-19 Infrastructure as Code | FM-P33, ADR-007 |
+| AP-10 One Cognito User Pool initially | ADR-002 (V00 decision) | AP-20 Capability-first modular monolith | FM-P29, ADR-003 |
 
 ---
 
@@ -529,7 +223,7 @@ Correlation context
 7. FieldMate resolves `iam.authentication_identity`.
 8. The mapping resolves to canonical `iam.user_profile`.
 
-On first valid login, FieldMate may create the canonical user/mapping through an explicit idempotent provisioning flow.
+An unknown identity is **not** persisted: the user is created only by an organisation-attachment action (amendment A1).
 
 A JWT does **not** recreate the user mapping on every request.
 
@@ -552,7 +246,7 @@ FieldMateRequestContext
 - userId
 - organisationId
 - membershipId
-- workerId? 
+- workerId?
 - correlationId
 - authenticationProvider
 ```
@@ -767,7 +461,7 @@ Do not use CloudWatch logs as the business system of record.
 - Use migrations rather than ad-hoc schema changes.
 - Use DB credentials/secrets through the approved infrastructure mechanism.
 - Prevent account/organisation enumeration where applicable.
-- Establish idempotent first-login provisioning.
+- Persist users only through atomic, idempotent onboarding (create organisation or accept invitation; amendment A1).
 - Design account linking explicitly; never silently merge users based only on matching email.
 
 ---
@@ -924,7 +618,7 @@ Do not silently rewrite architecture.
 - native login configuration;
 - optional Google configuration if credentials/config are available;
 - provider-neutral token/identity adapter;
-- first-login provisioning;
+- onboarding-only user creation (create organisation / accept invitation; amendment A1);
 - user resolution.
 
 Do not hard-code external provider secrets.
@@ -1004,7 +698,7 @@ Minimum test categories:
 - expired token;
 - wrong issuer/audience;
 - unknown authentication identity;
-- idempotent first-login provisioning.
+- unknown identity persists nothing; onboarding is atomic and idempotent (amendment A1).
 
 ### Organisation
 - one user / one organisation;
@@ -1075,8 +769,8 @@ This markdown file is a CR input to Claude.
 Claude must:
 
 1. Read this CR completely.
-2. Read `Docs/FieldMate_Master_Screen_Architecture_XRay_FINAL.xlsx`.
-3. Read `Docs/FieldMate_Stage1_Prototype_Implementation_Plan.docx`.
+2. Read `docs/FieldMate_Master_Screen_Architecture_XRay_FINAL.xlsx`.
+3. Read `docs/FieldMate_Stage1_Prototype_Implementation_Plan.docx`.
 4. Inspect the current repository and current generic prototype.
 5. Extract the exact rows/components relevant to V00.
 6. Validate this CR against the existing architecture.
@@ -1119,6 +813,20 @@ Claude's final V00 report should include:
 19. Git commit/branch/push status.
 20. Known limitations/deferred V00 items.
 21. Readiness recommendation for VS01.
+
+---
+
+# 23. Approved amendments
+
+These amendments were approved during V00 and supersede earlier text in this CR where they conflict.
+
+| # | Amendment | Effect | Records |
+|---|---|---|---|
+| A1 | **No orphan FieldMate users** | Successful authentication never persists a user. A user (with authentication identity) is created only atomically with an organisation relationship: `POST /onboarding/create-business` (organisation + user + identity + OWNER membership, idempotent) or `POST /identity/accept-invitation` (user/identity if new + membership + invitation acceptance). Unknown identities receive `IDENTITY_NOT_PROVISIONED`; users without a valid membership receive `NO_ACTIVE_MEMBERSHIP`. Replaces the "first-login provisioning" wording in §7.1, §13, §18 Phase 3 and §19 | FM-P18, ADR-004 |
+| A2 | **Parameter Store instead of Secrets Manager** | The database owner password is an SSM Parameter Store standard-tier `SecureString` (`/fieldmate/<env>/database/owner-password`), never in Terraform state or plans | FM-P03, ADR-008 |
+| A3 | **Dev database stopped when idle, parked weekly** | Deployments restore/start, then stop the dev database; evenings stop it; Fridays park it (final snapshot + delete) | FM-P04, ADR-006 |
+| A4 | **V00 endpoint set** | Implemented: `GET /health`, `GET /identity/welcome-landing`, `POST /onboarding/create-business`, `POST /identity/accept-invitation`, `GET /me`, `GET /identity/choose-organisation`, `GET /me/context`. Not built: `/me/organisations` (X-Ray `choose-organisation` used), `POST /me/organisation-context` (stateless `X-Organisation-Id` header validated per request). `GET /team/members` was removed as premature Team & Access functionality; role-permission enforcement is proven through a test-only probe | FM-P01, FM-P28 |
+| A5 | **Governance** | Project-wide principles moved to the architecture principles document; this CR cites them (§5) | — |
 
 ---
 

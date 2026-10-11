@@ -48,9 +48,6 @@ request GET /me/context "$organisation"
 expect 200 "$status" "GET /me/context with a validated organisation"
 expect OWNER "$(jq -r .role <<< "$json")" "trusted context role"
 
-request GET /team/members "$organisation"
-expect 200 "$status" "GET /team/members authorised by Access Core"
-
 request GET /me/context "$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen)"
 expect 403 "$status" "an unrelated organisation is denied"
 expect ORG_MEMBERSHIP_DENIED "$(jq -r .errorCode <<< "$json")" "denial error code"

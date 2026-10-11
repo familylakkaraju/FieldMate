@@ -20,10 +20,9 @@ mock_provider "aws" {
 
   mock_resource "aws_db_instance" {
     defaults = {
-      resource_id        = "db-ABCDEFGHIJKLMNOP"
-      address            = "fieldmate-postgres.example.eu-west-2.rds.amazonaws.com"
-      port               = 5432
-      master_user_secret = [{ secret_arn = "arn:aws:secretsmanager:eu-west-2:123456789012:secret:rds!db-x", kms_key_id = "", secret_status = "active" }]
+      resource_id = "db-ABCDEFGHIJKLMNOP"
+      address     = "fieldmate-postgres.example.eu-west-2.rds.amazonaws.com"
+      port        = 5432
     }
   }
 
@@ -68,6 +67,7 @@ mock_provider "aws" {
 variables {
   api_package_path   = "./tests/fixtures/package.zip"
   dbops_package_path = "./tests/fixtures/package.zip"
+  db_owner_password  = "test-only-not-a-real-password"
 }
 
 run "dev" {
@@ -86,6 +86,11 @@ run "dev" {
   assert {
     condition     = output.smoke_client_id != null
     error_message = "dev should have a smoke-test client."
+  }
+
+  assert {
+    condition     = output.db_owner_password_parameter == "/fieldmate/dev/database/owner-password"
+    error_message = "the owner password must come from the free SSM Parameter Store, not Secrets Manager."
   }
 }
 
@@ -115,7 +120,7 @@ run "parked_dev_without_database" {
   }
 
   assert {
-    condition     = output.db_instance_identifier == null && output.db_owner_secret_arn == null
+    condition     = output.db_instance_identifier == null && output.db_owner_password_parameter == null
     error_message = "a parked environment has no database."
   }
 }
