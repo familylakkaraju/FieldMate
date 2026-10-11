@@ -28,7 +28,7 @@ concurrency:
 jobs:
   dev-database:
     if: vars.AWS_DEPLOY_ROLE_ARN != ''
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # pinned for stability during V00 AWS acceptance; not a permanent prohibition
     timeout-minutes: 45
     environment: dev
     env:

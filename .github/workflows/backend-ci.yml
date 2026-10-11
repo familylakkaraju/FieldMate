@@ -25,7 +25,7 @@ env:
 
 jobs:
   build-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # pinned for stability during V00 AWS acceptance; not a permanent prohibition
     timeout-minutes: 20
     services:
       postgres:
@@ -56,7 +56,7 @@ jobs:
         run: dotnet test --solution FieldMate.slnx -c Release --no-build
 
   iac:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # pinned for stability during V00 AWS acceptance; not a permanent prohibition
     timeout-minutes: 15
     defaults:
       run:
@@ -76,7 +76,7 @@ jobs:
 
   package:
     needs: build-test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # pinned for stability during V00 AWS acceptance; not a permanent prohibition
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7

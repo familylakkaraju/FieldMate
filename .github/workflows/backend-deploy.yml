@@ -46,7 +46,7 @@ jobs:
   deploy:
     needs: ci
     if: vars.AWS_DEPLOY_ROLE_ARN != '' && vars.TF_STATE_BUCKET != ''
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # pinned for stability during V00 AWS acceptance; not a permanent prohibition
     timeout-minutes: 75
     environment: ${{ inputs.environment || 'dev' }}
     env:
