@@ -8,13 +8,13 @@
 |---|---|
 | **Implementation** | **Complete** for V00 scope, including amendments A1–A5 |
 | **Local validation** | **Passed**: Release build, 100/100 tests (33 unit, 67 integration on real PostgreSQL 17), format, Terraform validate and offline plan tests, actionlint, documentation link check (§11) |
-| **Feature branch** | Pushed to `origin/cr/fm-v00-foundation`. **Main merge not yet approved** |
+| **Feature branch** | Pushed to `origin/cr/fm-v00-foundation`. **Merge to `main` approved** by the owner (2026-10-11) |
 | **AWS deployment** | **Dev validated, then torn down** (2026-10-11, eu-west-2, manual runbook): deploy, migrate, smoke test, acceptance checks, stop/start/park/restore. Five defects found and fixed (§16) |
-| **Environment acceptance** | **Dev validation passed; awaiting owner approval.** Not yet exercised: the deploy workflow itself, passkey through managed login in a real browser, Google and Entra (§16.12) |
+| **Environment acceptance** | **Dev accepted** by the owner (2026-10-11); teardown verified (§16.12). Deferred: passkey through managed login in a real browser (to a future natural deployment), Google and Entra (no credentials). The deploy workflow first runs on merge (§12) |
 | **Production acceptance** | **Not started**: also requires the production hardening items in §9 |
 
-V00 is **not** production-ready. Dev validation on AWS passed (§16) and awaits owner approval; production acceptance
-also requires the hardening items in §9 and a production deployment.
+V00 is **not** production-ready. It is the accepted foundation baseline: dev validation on AWS passed (§16) and was
+accepted by the owner. Production acceptance also requires the hardening items in §9 and a production deployment.
 
 Code: [`backend/`](../../backend/README.md) · Infrastructure and runbook: [`infra/`](../../infra/README.md) ·
 Workflows: `.github/workflows/backend-ci.yml`, `backend-deploy.yml`, `dev-cost-control.yml`
@@ -266,7 +266,7 @@ probe test. The team-listing isolation test was removed with the endpoint.
 
 **Not yet proven:**
 - Google and Microsoft/Entra federated sign-in (no credentials provisioned).
-- Passkey enrolment and sign-in through managed login in a real browser with a platform authenticator.
+- Passkey enrolment and sign-in through managed login in a real browser with a platform authenticator (deferred to a future natural deployment).
 - The `backend-deploy.yml` and `dev-cost-control.yml` workflows themselves: they run from `main`, so dev was deployed with the manual runbook. This also means the scripts have not yet run on Linux.
 - RDS Proxy with end-to-end IAM authentication (production configuration), and any production deployment.
 
@@ -339,7 +339,7 @@ Environment acceptance is declared only after steps 3–4 pass, and this report 
 ## 15. Readiness for VS01
 
 - **VS01 planning can start now.** The governance model, principles and ADRs are in place for its CR to cite.
-- **VS01 implementation should start after dev environment acceptance (§14)**, so it builds on a proven deployed foundation.
+- **VS01 implementation can start**: dev environment acceptance is done (§16), so it builds on a proven deployed foundation.
 - **Before production acceptance:** resolve the production hardening items S1–S3 (§9).
 
 Patterns VS01 reuses:
@@ -441,7 +441,7 @@ organisations were removed with the user pool and the database at teardown.
 |---|---|
 | Native (password) | **Pass**: smoke client and web client (`USER_AUTH`) |
 | TOTP MFA | **Pass**: authenticator associated and verified; sign-in then required `SOFTWARE_TOKEN_MFA`; a wrong code was rejected (`CodeMismatchException`); the correct code issued a token that the API accepted |
-| Passkey | **Pass at the API level**: registration (`StartWebAuthnRegistration`/`CompleteWebAuthnRegistration`) and passwordless `USER_AUTH` sign-in with `WEB_AUTHN`, using a software authenticator (a local P-256 key with `none` attestation). The relying party was the pool's prefix domain (Cognito's default, confirming the defect 1 fix); an assertion signed by another key was rejected; the passkey-issued token resolved the same worker. **Not done:** enrolment through managed login with a browser or platform authenticator, which needs the owner |
+| Passkey | **Pass at the API level**: registration (`StartWebAuthnRegistration`/`CompleteWebAuthnRegistration`) and passwordless `USER_AUTH` sign-in with `WEB_AUTHN`, using a software authenticator (a local P-256 key with `none` attestation). The relying party was the pool's prefix domain (Cognito's default, confirming the defect 1 fix); an assertion signed by another key was rejected; the passkey-issued token resolved the same worker. **Deferred** to a future natural deployment: enrolment through managed login with a browser or platform authenticator |
 | Google | **Deferred**: no credentials provisioned (not blocking dev) |
 | Microsoft/Entra | **Deferred**: no credentials provisioned (not blocking dev) |
 
@@ -535,6 +535,7 @@ CI passed after every fix. Application code is unchanged by the cycle.
 | Park snapshot | Deleted. No FieldMate snapshots or retained automated backups remain |
 | Post-teardown sweep | 0 RDS instances, Lambda functions, HTTP APIs, Cognito pools, FieldMate log groups, VPC or ENIs |
 | Test data | Cognito users and the validation organisations were removed with the pool and the database. Local test credentials and invitation tokens were deleted |
+| Teardown verification | **Passed**: a separate read-only audit, directly against AWS rather than Terraform state, of all 20 resource categories in eu-west-2, plus a FieldMate tag sweep of all 17 regions. Zero unexpected FieldMate resources; tag-index entries for deleted resources were confirmed gone. Unrelated `AccessCore-dev` resources from another project were left untouched |
 
 **Retained** (near-zero, intentionally persistent):
 - The state bucket: one 718-byte dev state object plus versions.
