@@ -76,6 +76,18 @@ deployed to GitHub Pages by `.github/workflows/deploy-demo-pages.yml`.
 
 ---
 
+## Platform Foundation (V00)
+
+The production foundation every vertical slice builds on (CR-FM-V00): one .NET API host on AWS Lambda,
+provider-neutral identity behind Cognito, PostgreSQL-owned users, organisations and memberships, Access Core,
+minimal organisation-traceable telemetry, Terraform and GitHub Actions.
+
+- [`backend/`](backend/README.md) — API, Access Core, migrations, tests
+- [`infra/`](infra/README.md) — Terraform, deployment and cost-control runbook
+- [`docs/v00/V00-Foundation-Report.md`](docs/v00/V00-Foundation-Report.md) — implementation report, deviations, costs
+
+---
+
 # 2. Core Product Vision
 
 FieldMate should help users:

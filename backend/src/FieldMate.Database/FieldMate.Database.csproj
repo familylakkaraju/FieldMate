@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- PostgreSQL migrations (plain SQL, up + down), the migration runner and dev-only seeding.
+       Runs as a local CLI and as the fieldmate-db-ops-{env} Lambda inside the VPC. -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <UseAppHost>false</UseAppHost>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Migrations\*.sql" LogicalName="Migrations.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Amazon.Lambda.Core" />
+    <PackageReference Include="Amazon.Lambda.Serialization.SystemTextJson" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- For InvitationTokens only: the same hashing the API uses when accepting. -->
+    <ProjectReference Include="..\FieldMate.Core\FieldMate.Core.csproj" />
+  </ItemGroup>
+
+</Project>

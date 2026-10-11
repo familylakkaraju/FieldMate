@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The only project allowed to depend on AWS-specific APIs. Each type here implements a
+       provider-neutral FieldMate.Core boundary so it can be replaced without touching application code. -->
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Amazon.Lambda.APIGatewayEvents" />
+    <PackageReference Include="AWSSDK.RDS" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FieldMate.Core\FieldMate.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="FieldMate.UnitTests" />
+  </ItemGroup>
+
+</Project>

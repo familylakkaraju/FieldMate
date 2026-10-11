@@ -1,0 +1,140 @@
+name: Backend deploy (V00)
+
+# Commit -> build -> tests -> static checks -> IaC validation -> package -> deploy -> migrate -> smoke test.
+# dev deploys on every push to main; prod only by manual dispatch, behind the 'prod' GitHub environment's
+# required reviewers, with a database snapshot taken before migrations.
+#
+# Inert until configured (see infra/README.md): repository variables AWS_DEPLOY_ROLE_ARN, TF_STATE_BUCKET,
+# optional AWS_REGION; dev environment secrets SMOKE_USERNAME, SMOKE_PASSWORD; optional GOOGLE_CLIENT_SECRET,
+# MICROSOFT_CLIENT_SECRET with variables GOOGLE_CLIENT_ID, MICROSOFT_CLIENT_ID, MICROSOFT_TENANT_ID.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'infra/**'
+      - '.github/workflows/backend-*.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [dev, prod]
+        default: dev
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: backend-deploy-${{ inputs.environment || 'dev' }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/backend-ci.yml
+
+  deploy:
+    needs: ci
+    if: vars.AWS_DEPLOY_ROLE_ARN != '' && vars.TF_STATE_BUCKET != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: ${{ inputs.environment || 'dev' }}
+    env:
+      ENVIRONMENT: ${{ inputs.environment || 'dev' }}
+      AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-2' }}
+      TF_IN_AUTOMATION: true
+      TF_INPUT: false
+      TF_VAR_google_client_id: ${{ vars.GOOGLE_CLIENT_ID }}
+      TF_VAR_google_client_secret: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      TF_VAR_microsoft_client_id: ${{ vars.MICROSOFT_CLIENT_ID }}
+      TF_VAR_microsoft_client_secret: ${{ secrets.MICROSOFT_CLIENT_SECRET }}
+      TF_VAR_microsoft_tenant_id: ${{ vars.MICROSOFT_TENANT_ID }}
+    defaults:
+      run:
+        working-directory: infra/terraform/stack
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: lambda-packages
+          path: backend/artifacts
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.16.5
+          terraform_wrapper: false
+
+      - name: Terraform init
+        run: >-
+          terraform init
+          -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+          -backend-config="key=fieldmate/${ENVIRONMENT}/terraform.tfstate"
+          -backend-config="region=${AWS_REGION}"
+          -backend-config="encrypt=true"
+          -backend-config="use_lockfile=true"
+
+      - name: Terraform plan
+        run: >-
+          terraform plan -out=tfplan
+          -var-file="env/${ENVIRONMENT}.tfvars"
+          -var="region=${AWS_REGION}"
+          -var="api_package_path=${GITHUB_WORKSPACE}/backend/artifacts/api.zip"
+          -var="dbops_package_path=${GITHUB_WORKSPACE}/backend/artifacts/db-ops.zip"
+
+      - name: Terraform apply
+        run: terraform apply tfplan
+
+      - name: Read outputs
+        id: tf
+        run: |
+          for name in api_url dbops_function_name db_instance_identifier db_owner_secret_arn user_pool_id smoke_client_id; do
+            echo "$name=$(terraform output -raw "$name" 2>/dev/null || true)" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Ensure the database is running
+        if: steps.tf.outputs.db_instance_identifier != ''
+        run: |
+          id="${{ steps.tf.outputs.db_instance_identifier }}"
+          status="$(aws rds describe-db-instances --db-instance-identifier "$id" --query 'DBInstances[0].DBInstanceStatus' --output text)"
+          if [[ "$status" == "stopped" ]]; then aws rds start-db-instance --db-instance-identifier "$id" > /dev/null; fi
+          aws rds wait db-instance-available --db-instance-identifier "$id"
+
+      - name: Snapshot before production migrations
+        if: env.ENVIRONMENT == 'prod' && steps.tf.outputs.db_instance_identifier != ''
+        run: |
+          snapshot="${{ steps.tf.outputs.db_instance_identifier }}-premigrate-${GITHUB_RUN_ID}"
+          aws rds create-db-snapshot --db-instance-identifier "${{ steps.tf.outputs.db_instance_identifier }}" --db-snapshot-identifier "$snapshot" > /dev/null
+          aws rds wait db-snapshot-available --db-snapshot-identifier "$snapshot"
+
+      - name: Migrate
+        if: steps.tf.outputs.db_instance_identifier != ''
+        run: >-
+          bash "$GITHUB_WORKSPACE/infra/scripts/run-db-ops.sh"
+          "${{ steps.tf.outputs.dbops_function_name }}"
+          "${{ steps.tf.outputs.db_owner_secret_arn }}"
+          '{"operation":"migrate"}'
+
+      - name: Smoke test
+        if: env.ENVIRONMENT != 'prod' && steps.tf.outputs.db_instance_identifier != ''
+        env:
+          API_URL: ${{ steps.tf.outputs.api_url }}
+          SMOKE_CLIENT_ID: ${{ steps.tf.outputs.smoke_client_id }}
+          SMOKE_USERNAME: ${{ secrets.SMOKE_USERNAME }}
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+          # Fixed per environment so repeated runs replay the same organisation instead of creating new ones.
+          SMOKE_IDEMPOTENCY_KEY: 5b0e6f4c-3f0a-4c55-9a51-6d0b2c7e0d00
+          USER_POOL_ID: ${{ steps.tf.outputs.user_pool_id }}
+        run: |
+          if ! aws cognito-idp admin-get-user --user-pool-id "$USER_POOL_ID" --username "$SMOKE_USERNAME" > /dev/null 2>&1; then
+            aws cognito-idp admin-create-user --user-pool-id "$USER_POOL_ID" --username "$SMOKE_USERNAME" --message-action SUPPRESS \
+              --user-attributes Name=email,Value="$SMOKE_USERNAME" Name=email_verified,Value=true Name=name,Value="FieldMate Smoke Test" > /dev/null
+          fi
+          aws cognito-idp admin-set-user-password --user-pool-id "$USER_POOL_ID" --username "$SMOKE_USERNAME" --password "$SMOKE_PASSWORD" --permanent
+          bash "$GITHUB_WORKSPACE/infra/scripts/smoke-test.sh"

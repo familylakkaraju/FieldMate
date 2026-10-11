@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- fieldmate-api-{env}: the single synchronous API host. Runs as an AWS Lambda behind API Gateway
+       (executable-assembly handler "FieldMate.Api") and unchanged on Kestrel for local development. -->
+
+  <PropertyGroup>
+    <AWSProjectType>Lambda</AWSProjectType>
+    <!-- Lambda runs the assembly directly; no need for a native apphost in the package. -->
+    <UseAppHost>false</UseAppHost>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Amazon.Lambda.AspNetCoreServer.Hosting" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FieldMate.Core\FieldMate.Core.csproj" />
+    <ProjectReference Include="..\FieldMate.Aws\FieldMate.Aws.csproj" />
+  </ItemGroup>
+
+</Project>

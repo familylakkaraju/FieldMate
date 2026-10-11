@@ -1,0 +1,33 @@
+name: Dev cost control - stop RDS
+
+# CR AP-02: no paid idle resource survives simply because it was created. Stops the dev database every evening.
+# AWS automatically restarts a stopped RDS instance after 7 days; the daily schedule stops it again.
+on:
+  schedule:
+    - cron: '0 19 * * *' # 19:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  stop-dev-database:
+    if: vars.AWS_DEPLOY_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: dev
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-2' }}
+      - name: Stop fieldmate-postgres-dev if running
+        run: |
+          id=fieldmate-postgres-dev
+          status="$(aws rds describe-db-instances --db-instance-identifier "$id" --query 'DBInstances[0].DBInstanceStatus' --output text 2>/dev/null || echo absent)"
+          echo "$id: $status"
+          if [[ "$status" == "available" ]]; then
+            aws rds stop-db-instance --db-instance-identifier "$id" > /dev/null
+            echo "Stop requested."
+          fi

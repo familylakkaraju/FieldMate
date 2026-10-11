@@ -1,0 +1,4 @@
+# LF everywhere so `dotnet format --verify-no-changes` and migration checksums agree on Windows and Linux.
+* text=auto eol=lf
+*.png binary
+*.pem text eol=lf

@@ -1,0 +1,91 @@
+name: Backend CI (V00)
+
+# Build, static checks, unit + PostgreSQL integration tests, IaC validation and Lambda packaging.
+# Runs on pull requests and is called by backend-deploy.yml for every deployment.
+on:
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'infra/**'
+      - '.github/workflows/backend-*.yml'
+      - '.github/workflows/dev-shutdown.yml'
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      # Integration tests create and drop their own databases. With CI=true they fail rather than skip.
+      FIELDMATE_TEST_DB: Host=localhost;Port=5432;Username=postgres;Password=postgres;Database=postgres
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: backend/global.json
+      - run: dotnet restore FieldMate.slnx
+      - name: Static checks (formatting and analyzers)
+        run: dotnet format FieldMate.slnx --verify-no-changes --no-restore
+      - name: Build (warnings are errors)
+        run: dotnet build FieldMate.slnx -c Release --no-restore
+      - name: Unit and integration tests
+        run: dotnet test --solution FieldMate.slnx -c Release --no-build
+
+  iac:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.16.5
+      - run: terraform fmt -check -recursive
+      - name: Validate bootstrap
+        run: terraform -chdir=bootstrap init -backend=false -input=false && terraform -chdir=bootstrap validate
+      - name: Validate and test stack (offline plans with a mocked AWS provider)
+        run: terraform -chdir=stack init -backend=false -input=false && terraform -chdir=stack validate && terraform -chdir=stack test
+      - name: Check the Cognito trigger compiles
+        run: python3 -m py_compile modules/identity/pre_token_generation.py
+
+  package:
+    needs: build-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: backend/global.json
+      - run: bash infra/scripts/package-lambdas.sh "$GITHUB_WORKSPACE/backend/artifacts"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: lambda-packages
+          path: backend/artifacts/*.zip
+          retention-days: 7
