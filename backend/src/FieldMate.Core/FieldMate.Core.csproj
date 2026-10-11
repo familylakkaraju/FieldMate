@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Provider-neutral application core: identity, organisation context, Access Core, data access, telemetry.
+       Must never reference AWS packages (CR AP-05 / AP-12); AWS specifics live in FieldMate.Aws. -->
+
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="FieldMate.UnitTests" />
+  </ItemGroup>
+
+</Project>

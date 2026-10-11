@@ -1,0 +1,12 @@
+.terraform/
+.terraform.lock.hcl.bak
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+.build/
+# Real backend configs and local variable overrides may name accounts or carry secrets.
+*.s3.tfbackend
+!*.s3.tfbackend.example
+*.auto.tfvars
+secrets.tfvars

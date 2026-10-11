@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/FieldMate.Api/FieldMate.Api.csproj" />
+    <Project Path="src/FieldMate.Aws/FieldMate.Aws.csproj" />
+    <Project Path="src/FieldMate.Core/FieldMate.Core.csproj" />
+    <Project Path="src/FieldMate.Database/FieldMate.Database.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FieldMate.IntegrationTests/FieldMate.IntegrationTests.csproj" />
+    <Project Path="tests/FieldMate.UnitTests/FieldMate.UnitTests.csproj" />
+  </Folder>
+</Solution>
