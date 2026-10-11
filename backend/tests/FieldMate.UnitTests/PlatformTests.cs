@@ -1,3 +1,5 @@
+using System.Text.Json;
+using Amazon.Lambda.Serialization.SystemTextJson;
 using FieldMate.Core.Onboarding;
 using FieldMate.Core.Telemetry;
 using FieldMate.Database;
@@ -78,5 +80,16 @@ public sealed class PlatformTests
         Assert.Equal(hash, InvitationTokens.Hash(first));
         Assert.False(InvitationTokens.IsWellFormed("short"));
         Assert.False(InvitationTokens.IsWellFormed(new string('a', 40) + "/+="));
+    }
+
+    [Fact]
+    public void Db_ops_response_names_the_invitation_token_as_run_db_ops_sh_redacts_it()
+    {
+        // infra/scripts/run-db-ops.sh deletes InvitationToken from the response it prints in CI.
+        using var stream = new MemoryStream();
+        new DefaultLambdaJsonSerializer().Serialize(new DbOpsResponse("create-invitation", "dev", [1], [], "token"), stream);
+
+        var response = JsonDocument.Parse(stream.ToArray()).RootElement;
+        Assert.Equal("token", response.GetProperty("InvitationToken").GetString());
     }
 }

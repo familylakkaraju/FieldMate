@@ -18,7 +18,8 @@ umask 077
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-password="$(aws ssm get-parameter --name "$password_parameter" --with-decryption --query Parameter.Value --output text)"
+# MSYS_NO_PATHCONV stops Git Bash rewriting the leading-slash parameter name into a Windows path for aws.exe.
+password="$(MSYS_NO_PATHCONV=1 aws ssm get-parameter --name "$password_parameter" --with-decryption --query Parameter.Value --output text)"
 if [[ -n "${GITHUB_ACTIONS:-}" ]]; then echo "::add-mask::$password"; fi
 
 jq -n --argjson operation "$operation_json" --arg password "$password" '$operation + {password: $password}' > "$tmp/payload.json"
@@ -35,8 +36,9 @@ if [[ "$function_error" != "None" ]]; then
 fi
 
 # An invitation token is a one-time secret: shown only when explicitly requested, never in CI logs.
-if [[ -z "${GITHUB_ACTIONS:-}" ]] && jq -e '.invitationToken != null' "$tmp/response.json" > /dev/null; then
+# The Lambda serializer keeps the .NET property names (PlatformTests pins InvitationToken).
+if [[ -z "${GITHUB_ACTIONS:-}" ]] && jq -e '.InvitationToken != null' "$tmp/response.json" > /dev/null; then
   jq . "$tmp/response.json"
 else
-  jq 'del(.invitationToken)' "$tmp/response.json"
+  jq 'del(.InvitationToken)' "$tmp/response.json"
 fi
