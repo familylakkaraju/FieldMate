@@ -72,14 +72,25 @@ public sealed class TestDatabase : IAsyncDisposable
     public MigrationRunner CreateRunner(TextWriter? log = null) =>
         new(Owner, MigrationCatalog.LoadEmbedded(), log ?? TextWriter.Null);
 
-    public async Task MigrateAsync()
+    public Task MigrateAsync() => SerialisedAsync(async () =>
+    {
+        await CreateRunner().UpAsync(null, CancellationToken.None);
+        // Local stand-in for RDS IAM authentication: the API connects as the least-privilege runtime role.
+        await ExecuteAsync($"ALTER ROLE fieldmate_app WITH LOGIN PASSWORD '{AppRolePassword}'");
+        return true;
+    });
+
+    /// <summary>
+    /// Runs migration work one test database at a time. Test databases share one PostgreSQL server, and
+    /// <c>fieldmate_app</c> is a server-wide role: on a fresh server (CI) concurrent first migrations would race to
+    /// create it. Every test that runs migrations must go through this gate.
+    /// </summary>
+    public static async Task<T> SerialisedAsync<T>(Func<Task<T>> migrationWork)
     {
         await MigrationGate.WaitAsync();
         try
         {
-            await CreateRunner().UpAsync(null, CancellationToken.None);
-            // Local stand-in for RDS IAM authentication: the API connects as the least-privilege runtime role.
-            await ExecuteAsync($"ALTER ROLE fieldmate_app WITH LOGIN PASSWORD '{AppRolePassword}'");
+            return await migrationWork();
         }
         finally
         {

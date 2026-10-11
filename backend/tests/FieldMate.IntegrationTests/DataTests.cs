@@ -16,10 +16,10 @@ public sealed class DataTests
         var runner = db.CreateRunner();
         var all = MigrationCatalog.LoadEmbedded().Select(m => m.Version).ToArray();
 
-        Assert.Equal(all, (await runner.UpAsync(null, Cancel)).Select(m => m.Version));
-        Assert.Empty(await runner.DownAsync(0, Cancel));
+        Assert.Equal(all, (await TestDatabase.SerialisedAsync(() => runner.UpAsync(null, Cancel))).Select(m => m.Version));
+        Assert.Empty(await TestDatabase.SerialisedAsync(() => runner.DownAsync(0, Cancel)));
         Assert.True(await db.ScalarAsync<bool>("SELECT to_regclass('iam.user_profile') IS NULL"));
-        Assert.Equal(all, (await runner.UpAsync(null, Cancel)).Select(m => m.Version));
+        Assert.Equal(all, (await TestDatabase.SerialisedAsync(() => runner.UpAsync(null, Cancel))).Select(m => m.Version));
     }
 
     [DatabaseFact]
@@ -28,7 +28,7 @@ public sealed class DataTests
         await using var db = await TestDatabase.CreateAsync();
         var log = new StringWriter();
 
-        await db.CreateRunner(log).UpAsync(null, Cancel);
+        await TestDatabase.SerialisedAsync(() => db.CreateRunner(log).UpAsync(null, Cancel));
 
         Assert.Equal("", log.ToString());
     }
@@ -39,7 +39,7 @@ public sealed class DataTests
         await using var db = await TestDatabase.CreateAsync();
         await db.ExecuteAsync("UPDATE platform.schema_migration SET checksum = 'tampered' WHERE version = 1");
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => db.CreateRunner().UpAsync(null, Cancel));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => TestDatabase.SerialisedAsync(() => db.CreateRunner().UpAsync(null, Cancel)));
     }
 
     [DatabaseFact]
