@@ -1,6 +1,6 @@
 # FieldMate Architecture Principles
 
-**Status:** Approved, version 1.0 (2026-10-11)\
+**Status:** Approved, version 1.1 (2026-10-11)\
 **Applies to:** all of FieldMate, every vertical (V00–V38 and beyond) and every delivery slice\
 **Authority:** this document is the single source of truth for project-wide architecture principles. If a vertical
 CR, a README or any other document disagrees with it, this document wins until an approved ADR says otherwise.
@@ -112,6 +112,7 @@ Version history:
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 2026-10-11 | Consolidated from the README principles, the Stage-1 prototype plan, the X-Ray legend, CR-FM-V00 (AP-01…AP-20), the V00 no-orphan-users addendum, and the zero-cost and parking directives |
+| 1.1 | 2026-10-11 | FM-P14 amended (ADR-009): first-class business and configuration data stored as typed relational, directly queryable records; no aggregate JSON documents; JSONB only for justified opaque/leaf fragments |
 
 ## 6. Deviation and exception process
 
@@ -147,6 +148,7 @@ proceeding.
 - [ ] Generic: no trade-specific models, pages or conditionals; behaviour from configuration?
 
 **Data, identity and access (FM-P14–P22)**
+- [ ] First-class data stored as typed relational records (no whole-organisation/configuration JSON documents, no catch-all JSONB; any JSONB fragment justified)?
 - [ ] Tenant-owned data carries `organisation_id`; organisation context validated server-side?
 - [ ] Identity, user, membership and worker kept separate; no user persisted without an organisation relationship?
 - [ ] Every protected operation goes through Access Core?
@@ -177,7 +179,7 @@ proceeding.
 | [FM-P11](#fm-p11--standards-first-communication) | Standards-first communication | Performance |
 | [FM-P12](#fm-p12--generic-platform) | Generic platform | Product |
 | [FM-P13](#fm-p13--convention-over-configuration) | Convention over configuration | Product |
-| [FM-P14](#fm-p14--postgresql-first) | PostgreSQL-first | Data |
+| [FM-P14](#fm-p14--postgresql-first-relational-for-first-class-data) | PostgreSQL-first, relational for first-class data | Data |
 | [FM-P15](#fm-p15--organisation-is-the-tenant-boundary) | Organisation is the tenant boundary | Data |
 | [FM-P16](#fm-p16--files-are-object-storage-plus-business-metadata) | Files are object storage plus business metadata | Data |
 | [FM-P17](#fm-p17--identity-user-membership-and-worker-are-separate) | Identity, user, membership and worker are separate | Identity |
@@ -459,18 +461,41 @@ less from organisation configuration, and rarely from extensions.
 
 ### E. Data
 
-#### FM-P14 — PostgreSQL-first
+#### FM-P14 — PostgreSQL-first, relational for first-class data
 
 **Rule.** PostgreSQL is the default structured system of record: standard **Amazon RDS for PostgreSQL** (not
-Aurora). No DynamoDB initially.
+Aurora). No DynamoDB initially. **First-class FieldMate business and configuration data must be stored as typed
+relational, directly queryable records.** It is never stored as one aggregate JSON document per organisation,
+per configuration or per entity (ADR-009).
+
+**Why it matters.** Records can be filtered, joined, reported on, indexed, constrained and migrated. An aggregate
+JSON document hides the data from SQL and from the database's integrity checks, and moves validation into
+application code.
 
 **Required behaviour.**
-- Model relationally first: PK/FK constraints, transactions, selective B-tree/GIN indexes, JSONB only for genuinely flexible structures.
+- Model relationally: PK/FK constraints, tenant-consistent keys, transactions, B-tree indexes.
+- First-class data covers the organisation profile, every configuration concept (services, terminology, branding, forms with their fields and options, workflows, pricing, booking rules, dashboard and website content) and all business entities. Each is stored as its own typed rows and tables.
+- Layered configuration (FM-P13: platform → archetype → organisation → service → user) is resolved in production from typed configuration and override records, never from whole-document JSON merge persistence.
+- **JSONB is an exception, not a general configuration mechanism.** Use it only for a bounded opaque or leaf fragment that:
+  - is not an entity's aggregate canonical representation;
+  - needs no FieldMate relational integrity;
+  - is not normally filtered, joined or referenced;
+  - is justified in the CR;
+  - can be promoted to relational schema by migration later.
+
+  Examples: raw third-party webhook payloads; provider-specific opaque metadata. Form field options are **not** an example: they are first-class data (`form_field`, `form_field_option`).
 - Use PostgreSQL full-text search before OpenSearch.
 - Use pgvector in the same database when retrieval is justified, before any separate vector store.
 - Change schemas through versioned migrations.
+- JSON remains the API transport format and the prototype's in-browser persistence. Production persistence is independent of transport shape (FM-P32).
 
-**Avoid.** Adding any other datastore without a measured requirement and an ADR (FM-P34).
+**Avoid.**
+- Whole-organisation or whole-configuration JSON/JSONB documents.
+- Business entities whose canonical persistence is one JSONB blob.
+- Catch-all `settings`, `data` or `configuration` JSONB columns.
+- Adding any other datastore without a measured requirement and an ADR (FM-P34).
+
+**Review question.** Can "which organisations use X" or "list every Y in this organisation" be answered with a direct SQL query?
 
 #### FM-P15 — Organisation is the tenant boundary
 
@@ -780,6 +805,7 @@ ADRs live in [`docs/architecture/adr/`](adr/README.md). Current decisions:
 | [ADR-006](adr/ADR-006-zero-idle-cost-non-production.md) | Zero-idle-cost non-production: stop and park | FM-P04, P05 |
 | [ADR-007](adr/ADR-007-terraform-iac.md) | Terraform as the project IaC tool | FM-P33, P25 |
 | [ADR-008](adr/ADR-008-parameter-store-for-secrets.md) | SSM Parameter Store for secrets and configuration | FM-P03, P02 |
+| [ADR-009](adr/ADR-009-relational-records-not-json-documents.md) | First-class data as typed relational records, not JSON documents | FM-P14, P13, P15 |
 
 ## 11. Provenance
 

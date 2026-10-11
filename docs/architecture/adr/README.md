@@ -16,6 +16,7 @@ vertical CRs (see [governance hierarchy](../FieldMate-Architecture-Principles.md
 | [ADR-006](ADR-006-zero-idle-cost-non-production.md) | Zero-idle-cost non-production environments | Accepted | V00 |
 | [ADR-007](ADR-007-terraform-iac.md) | Terraform as the project IaC tool | Accepted | V00 |
 | [ADR-008](ADR-008-parameter-store-for-secrets.md) | SSM Parameter Store for secrets and configuration | Accepted | V00 |
+| [ADR-009](ADR-009-relational-records-not-json-documents.md) | First-class data as typed relational records, not JSON documents | Accepted | V00 |
 
 ## Rules
 

@@ -40,7 +40,7 @@ Changes made to establish it:
 
 | Change | Detail |
 |---|---|
-| New `docs/architecture/` | Principles document and `adr/` with an index, a template and eight ADRs |
+| New `docs/architecture/` | Principles document (v1.1) and `adr/` with an index, a template and nine ADRs |
 | `docs/v00/` | The V00 CR and its diagrams moved here (`git mv`) beside the report |
 | **Folder case fixed** | The repository had tracked the folder as `Docs/` since the first prototype commit, while the disk and every link used `docs/`. Windows hid this; GitHub and Linux CI would have broken every `docs/…` link. Normalised to `docs/` with a case-only rename |
 | README | §3 principle text replaced by a pointer and section-to-ID map; §26 and §28 point to the principles and checklist. Vision, domain and roadmap content unchanged |
@@ -62,7 +62,7 @@ anti-patterns and, where useful, review questions:
 | Cost | P02 Zero-cost-first · P03 Free alternative first · P04 No unnecessary idle non-production cost · P05 Environment-aware architecture · P06 Cost is part of capability routing |
 | Performance and communication | P07 High performance through simplicity · P08 Fast path before agent path · P09 Latency by design · P10 Async only where it adds value · P11 Standards-first communication |
 | Product and domain | P12 Generic platform · P13 Convention over configuration |
-| Data | P14 PostgreSQL-first · P15 Organisation is the tenant boundary · P16 Files are object storage plus metadata |
+| Data | P14 PostgreSQL-first, relational for first-class data (no aggregate JSON documents) · P15 Organisation is the tenant boundary · P16 Files are object storage plus metadata |
 | Identity and access | P17 Identity ≠ user ≠ membership ≠ worker · **P18 No orphan FieldMate users** · P19 Provider-neutral identity · P20 FieldMate does not own passwords · P21 Access Core is central · P22 Provider-independent commercial model |
 | AI and voice | P23 Controlled services execute mutations · P24 Voice is distributed |
 | Portability and clients | P25 Provider portability · P26 Clients don't couple to cloud providers · P27 Backend abstraction at the client · P28 Contract stability |
@@ -85,6 +85,7 @@ AP-01…AP-20, the no-orphan-users addendum and the October 2026 cost directives
 | [ADR-006](../architecture/adr/ADR-006-zero-idle-cost-non-production.md) | Dev database stopped when idle, parked weekly | |
 | [ADR-007](../architecture/adr/ADR-007-terraform-iac.md) | Terraform as project IaC tool | Records the V00 choice as the project standard |
 | [ADR-008](../architecture/adr/ADR-008-parameter-store-for-secrets.md) | Parameter Store for secrets and configuration; Secrets Manager denied | |
+| [ADR-009](../architecture/adr/ADR-009-relational-records-not-json-documents.md) | First-class business and configuration data as typed relational, directly queryable records; no aggregate JSON documents; JSONB only for justified opaque/leaf fragments | Project-owner decision; governs future verticals (onboarding, configuration). V00 already complies (no JSON/JSONB columns) |
 
 No speculative ADRs were created: each records a decision already implemented and in use.
 
