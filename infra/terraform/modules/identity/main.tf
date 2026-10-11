@@ -98,8 +98,9 @@ resource "aws_cognito_user_pool" "this" {
     allowed_first_auth_factors = ["PASSWORD", "WEB_AUTHN"]
   }
 
+  # The relying party ID is left unset: without a custom domain Cognito defaults it to the pool's prefix domain.
+  # Setting that domain explicitly fails on a new pool, because the domain resource can only exist after the pool.
   web_authn_configuration {
-    relying_party_id  = local.domain_host
     user_verification = "preferred"
   }
 
