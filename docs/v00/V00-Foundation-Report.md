@@ -7,13 +7,14 @@
 | Status | State |
 |---|---|
 | **Implementation** | **Complete** for V00 scope, including amendments A1–A5 |
-| **Local validation** | **Passed**: Release build, 99/99 tests (32 unit, 67 integration on real PostgreSQL 17.11), format, Terraform validate and offline plan tests, actionlint, documentation link check (§11) |
+| **Local validation** | **Passed**: Release build, 100/100 tests (33 unit, 67 integration on real PostgreSQL 17), format, Terraform validate and offline plan tests, actionlint, documentation link check (§11) |
 | **Feature branch** | Pushed to `origin/cr/fm-v00-foundation`. **Main merge not yet approved** |
-| **AWS deployment** | **Not started**: no AWS credentials were available. Nothing has run on AWS |
-| **Environment acceptance** | **Not started**: the Phase 8 chain is automated in `infra/scripts/smoke-test.sh`, pending the first dev deployment (§12, §14) |
+| **AWS deployment** | **Dev validated, then torn down** (2026-10-11, eu-west-2, manual runbook): deploy, migrate, smoke test, acceptance checks, stop/start/park/restore. Five defects found and fixed (§16) |
+| **Environment acceptance** | **Dev validation passed; awaiting owner approval.** Not yet exercised: the deploy workflow itself, passkey through managed login in a real browser, Google and Entra (§16.12) |
 | **Production acceptance** | **Not started**: also requires the production hardening items in §9 |
 
-V00 is **not** accepted or production-ready until the AWS deployment and smoke-test gates in §14 have passed.
+V00 is **not** production-ready. Dev validation on AWS passed (§16) and awaits owner approval; production acceptance
+also requires the hardening items in §9 and a production deployment.
 
 Code: [`backend/`](../../backend/README.md) · Infrastructure and runbook: [`infra/`](../../infra/README.md) ·
 Workflows: `.github/workflows/backend-ci.yml`, `backend-deploy.yml`, `dev-cost-control.yml`
@@ -224,7 +225,8 @@ endpoints (about $7/month per AZ) exist in any environment.
 
 ## 10. Test results
 
-Local run on Windows, Release build, PostgreSQL 17.11: **99 passed, 0 failed, 0 skipped** (32 unit, 67 integration).
+CI (`ubuntu-24.04`, PostgreSQL 17) on the validated branch: **100 passed, 0 failed, 0 skipped** (33 unit, 67 integration).
+The 100th test was added during AWS validation: it pins the db-ops response field that `run-db-ops.sh` redacts (§16.11).
 
 | Category | Coverage |
 |---|---|
@@ -242,27 +244,31 @@ probe test. The team-listing isolation test was removed with the endpoint.
 | Check | Result |
 |---|---|
 | `dotnet build -c Release` | 0 warnings (warnings are errors), 0 errors |
-| `dotnet test` (unit + PostgreSQL integration) | 99/99 passed |
+| `dotnet test` (unit + PostgreSQL integration) | 100/100 passed (CI) |
 | `dotnet format --verify-no-changes` | Clean |
 | `terraform fmt -check -recursive` | Clean |
 | `terraform validate` (bootstrap, stack) | Valid; provider lock files cover linux_amd64, windows_amd64, darwin_arm64 |
 | `terraform test` (mocked provider) | 3/3 passed: dev, prod-like (proxy, alarms), parked; asserts the Parameter Store path |
 | actionlint (all workflows) | Clean |
 | Markdown link check (`docs/`, READMEs) | All relative links resolve (§1 case fix included) |
-| Shell scripts (`infra/scripts/*.sh`) | **Not executed**: no bash on the development machine. They first run in CI and on AWS |
+| Shell scripts (`infra/scripts/*.sh`) | `run-db-ops.sh`, `smoke-test.sh` and `dev-database.sh` **ran against AWS dev** under Git Bash on Windows (§16.10). On Linux they run only in the deploy and cost-control workflows, which have not run yet |
 
 ## 12. AWS deployment status
 
-**Nothing has been deployed.** None of the following is proven yet:
+**Dev was deployed, validated and torn down on 2026-10-11** (§16). Proven on AWS:
+- Cognito native password sign-in, TOTP MFA and passkey (WebAuthn) sign-in through Cognito's APIs.
+- The API Gateway JWT authorizer with real Cognito tokens, and the pre-token-generation trigger claims.
+- The Lambda in private subnets reaching RDS with IAM authentication.
+- Migrations through `fieldmate-db-ops` with the Parameter Store password.
+- Stop, start, park and restore.
+- The deploy-role guardrails, using the IAM policy simulator.
+- Real `terraform plan`, `apply` and `destroy`.
 
-- Cognito sign-in end to end (native password, passkey enrolment and sign-in, TOTP MFA)
-- Google and Microsoft/Entra federated sign-in
-- The API Gateway JWT authorizer with real Cognito access tokens, and the pre-token-generation trigger claims
-- The Lambda in private subnets reaching RDS with IAM authentication
-- RDS Proxy with end-to-end IAM authentication (production configuration)
-- Migrations through `fieldmate-db-ops` with the Parameter Store password
-- The deploy, smoke-test, stop and park/restore cycle, and the deploy-role guardrails
-- Real `terraform plan` against an account (only offline mocked plans have run)
+**Not yet proven:**
+- Google and Microsoft/Entra federated sign-in (no credentials provisioned).
+- Passkey enrolment and sign-in through managed login in a real browser with a platform authenticator.
+- The `backend-deploy.yml` and `dev-cost-control.yml` workflows themselves: they run from `main`, so dev was deployed with the manual runbook. This also means the scripts have not yet run on Linux.
+- RDS Proxy with end-to-end IAM authentication (production configuration), and any production deployment.
 
 ## 13. Deviations from the CR and X-Ray
 
@@ -312,7 +318,8 @@ Proposed reference updates (for the owner of the X-Ray and diagrams; the spreads
 
 ## 14. Readiness for AWS environment validation
 
-**Ready.** To run the first environment validation:
+**Done for dev with the manual runbook (§16).** Still outstanding: step 3 through the workflow once it is on `main`;
+from step 4, browser passkey enrolment and Google/Entra. The original procedure:
 
 1. An administrator runs `infra/terraform/bootstrap` (state bucket, OIDC deploy role, owner-password parameters).
 2. Set the GitHub variables and secrets listed in the [runbook §1](../../infra/README.md#1-bootstrap-once-per-aws-account-by-an-administrator).
@@ -342,3 +349,213 @@ Patterns VS01 reuses:
 - The telemetry `operation` named after the X-Ray handler.
 - New permissions seeded by migration.
 - A cost review and a check against FM-P34 in the CR.
+
+## 16. AWS dev validation (2026-10-11)
+
+An ephemeral dev cycle: bootstrap, configure, deploy, migrate, smoke test, acceptance checks, evidence, destroy.
+No secrets, tokens or invitation tokens are reproduced here; identifiers belong to resources that no longer exist.
+
+| Item | Value |
+|---|---|
+| Account / region | `pptk-dev` (327260351722) / eu-west-2 London |
+| Method | Manual runbook from a Windows workstation (Terraform 1.16.5, AWS CLI v2, Git Bash). The deploy workflow runs from `main`, so it was not used; no temporary deployment mechanism was added |
+| Code | `cr/fm-v00-foundation`; Lambda packages from the branch's CI artifacts (backend code unchanged during the cycle) |
+| Timeline (UTC) | Bootstrap and GitHub configuration before 19:53; deploy 19:54; validation until 21:04; teardown from 21:05 |
+
+### 16.1 Bootstrap and GitHub configuration
+
+| Created | Resources |
+|---|---|
+| Terraform state | S3 bucket `fieldmate-tfstate-327260351722-eu-west-2` with versioning, SSE, public-access block, TLS-only policy and lifecycle (6 resources) |
+| Deploy identity | GitHub OIDC provider; role `fieldmate-github-deploy` (trust: this repository's `dev` and `prod` environments); `PowerUserAccess`; inline `manage-fieldmate-iam` and `fieldmate-secret-guardrails` (5 resources) |
+| Owner passwords | `/fieldmate/dev/database/owner-password`, `/fieldmate/prod/database/owner-password`: standard-tier `SecureString`, `alias/aws/ssm`, written write-only (2 resources) |
+| GitHub | Variables `AWS_DEPLOY_ROLE_ARN`, `TF_STATE_BUCKET`, `AWS_REGION`; environments `dev` and `prod` (required reviewers); `dev` secrets `SMOKE_USERNAME`, `SMOKE_PASSWORD` |
+
+Neither owner password appears in the local bootstrap state, which is git-ignored.
+
+### 16.2 Deployment and cost principles
+
+| Check | Result |
+|---|---|
+| Plan | 46 resources. **No** NAT Gateway, Elastic IP, internet gateway, VPC endpoint, RDS Proxy, Aurora, OpenSearch, ElastiCache, DynamoDB, ECS, Step Functions, Secrets Manager, EC2 or load balancer |
+| Database | RDS PostgreSQL 17.9, `db.t4g.micro`, single-AZ, 20 GiB gp3, encrypted, not public, IAM auth on, Performance Insights off, enhanced monitoring off, 1-day backups |
+| Pay-per-use | Lambda ×3 (`dotnet10`/`python3.13`, arm64), HTTP API, Cognito Essentials |
+| Log retention | API 7, db-ops 14, pre-token trigger 7 days |
+| First apply | **Failed** after 541 s, with RDS created in 6 min 29 s: Cognito rejected the passkey relying-party ID (defect 1, §16.11). Fixed; the re-apply replaced the tainted user pool in 22 s |
+| Owner password | Absent from the saved plan files and the remote state (46 resources) |
+| Account sweep | No NAT, VPC endpoint, Elastic IP, RDS Proxy, Aurora, Secrets Manager, ElastiCache, OpenSearch, ECS or Step Functions in the region. One unrelated, pre-existing DynamoDB table (`AccessCore-dev-…`, created 2026-09-26) was left untouched |
+
+### 16.3 Migrations (`run-db-ops.sh` → `fieldmate-db-ops-dev`)
+
+| Run | Result |
+|---|---|
+| `migrate` | Applied 0001–0004 (95, 16, 7, 52 ms); 5 s end to end |
+| `migrate` again | No migrations applied (idempotent); 3 s |
+| `status` | 1–4 applied |
+| After the park/restore | `status` 1–4 (schema restored with the data) |
+
+The owner password came from Parameter Store and did not appear in shell output, Lambda logs, the plan or the
+state (§16.7). The two `create-invitation` runs also went through this script, with the tokens written only to a
+local file.
+
+### 16.4 End-to-end smoke test (Cognito → API Gateway → Lambda → identity → organisation context → Access Core → PostgreSQL)
+
+| # | Required check | Result |
+|---|---|---|
+| 1 | Health endpoint | **Pass**: `GET /health` 200, including while the database was stopped |
+| 2 | Protected API rejects a missing or invalid token | **Pass**: rejected with 401 for no token, a garbage token, a tampered signature and `Basic` auth (all at the gateway), and for an ID token (by the Lambda: `AUTH_INVALID_TOKEN`) |
+| 3 | Cognito native user authenticates | **Pass**: `USER_PASSWORD_AUTH` (smoke client) and `USER_AUTH` password (web client) |
+| 4 | Valid token reaches the API | **Pass**: identity resolved (`provider=COGNITO`) |
+| 5 | Unknown identity alone creates no user | **Pass**: §16.5 |
+| 6 | create-business creates organisation, user, identity and OWNER membership atomically | **Pass**: 201, `created=true`, `userCreated=true`, OWNER; afterwards `/me` shows one linked identity and choose-organisation one membership |
+| 7 | Repeat create-business is idempotent | **Pass**: same key returns 200, `created=false`, same organisation and membership, even with a different name; still exactly one organisation |
+| 8 | `GET /me` | **Pass**: 200, `ACTIVE`, one linked Cognito identity |
+| 9 | `GET /me/context` | **Pass**: organisation; OWNER with `organisation.manage, organisation.read, team.manage, team.read`; `workerId` null for owners; the worker's context returns its `workerId` |
+| 10 | Foreign organisation denied | **Pass**: 403 `ORG_MEMBERSHIP_DENIED` both ways between two real organisations, for an owner, a worker and a never-assigned ID |
+| 11 | Zero-active-membership denied | **Not reproducible on AWS** without editing the database: V00 has no endpoint that suspends a membership. Covered by integration tests (suspended membership; suspended organisation) |
+| 12 | Access Core enforces policy | **Pass**: the WORKER has only `organisation.read`, while OWNER also has `organisation.manage`, `team.manage` and `team.read`, both from PostgreSQL. Also verified: missing header gives `ORG_CONTEXT_REQUIRED`, a malformed one `ORG_CONTEXT_INVALID`, a non-member `ORG_MEMBERSHIP_DENIED`, an unknown identity `IDENTITY_NOT_PROVISIONED`. A role-permission *denial* needs an endpoint V00 does not have; it is covered by the probe-host integration tests |
+
+`smoke-test.sh` passed four times: after deploy, as a replay, after a reboot (with the readiness wait), and after
+the restore. Its first run created the smoke organisation (telemetry: 201); later runs replayed it (200).
+
+### 16.5 No-orphan users (FM-P18), on real AWS
+
+1. A Cognito user (with TOTP MFA) authenticated and called the API before any onboarding:
+   - `/me`, `/identity/choose-organisation` and `/me/context` returned 403 `IDENTITY_NOT_PROVISIONED`.
+   - create-business without an `Idempotency-Key`, and with a blank name, returned 400 `VALIDATION_FAILED`.
+   - Accepting an unknown invitation returned 403 `INVITATION_INVALID` (reason `not_found`, inside the onboarding transaction).
+   - Afterwards `/me` and choose-organisation still returned `IDENTITY_NOT_PROVISIONED`: nothing was persisted.
+2. That user's first create-business returned 201 with `userCreated=true`, an OWNER membership and a user ID; `/me` then returned that same user.
+3. A second new user was invited to organisation A as a worker:
+   - an invitation addressed to another email was rejected (`recipient_mismatch`), and the user was still not provisioned afterwards;
+   - the matching invitation created the user, identity, WORKER membership and worker record in one call (`userCreated=true`);
+   - re-accepting returned the same membership, and another identity reusing the accepted invitation was rejected (`already_used`).
+
+Partial-write rollback (a failure after the user insert) needs fault injection, which deployed code does not have;
+it is covered by the integration test "rollback after the user insert leaves no orphan". Test users and
+organisations were removed with the user pool and the database at teardown.
+
+### 16.6 Authentication
+
+| Method | Result |
+|---|---|
+| Native (password) | **Pass**: smoke client and web client (`USER_AUTH`) |
+| TOTP MFA | **Pass**: authenticator associated and verified; sign-in then required `SOFTWARE_TOKEN_MFA`; a wrong code was rejected (`CodeMismatchException`); the correct code issued a token that the API accepted |
+| Passkey | **Pass at the API level**: registration (`StartWebAuthnRegistration`/`CompleteWebAuthnRegistration`) and passwordless `USER_AUTH` sign-in with `WEB_AUTHN`, using a software authenticator (a local P-256 key with `none` attestation). The relying party was the pool's prefix domain (Cognito's default, confirming the defect 1 fix); an assertion signed by another key was rejected; the passkey-issued token resolved the same worker. **Not done:** enrolment through managed login with a browser or platform authenticator, which needs the owner |
+| Google | **Deferred**: no credentials provisioned (not blocking dev) |
+| Microsoft/Entra | **Deferred**: no credentials provisioned (not blocking dev) |
+
+### 16.7 Observability and log hygiene
+
+| Check | Result |
+|---|---|
+| Structure | 78 API telemetry records, one JSON line per request. Tenant-scoped records carry `organisationId`, `userId`, `correlationId` and `operation`, plus `scope`, `route` (template), `status`, `durationMs` and `authenticationProvider` |
+| Denials | Carry `errorCode` and `requestedOrganisationId`, never `organisationId` (9 denials) |
+| Reasons | Clients get one generic `INVITATION_INVALID`; logs keep `not_found`, `recipient_mismatch` and `already_used` |
+| Errors | The stopped-database request logged `Npgsql.NpgsqlException: Failed to connect to <private IP>:5432` with a stack trace; no credentials |
+| Secrets scan | 468 log events across the three groups: **no** JWTs, `Bearer` values, test-user passwords, the SSM owner password, TOTP secrets, invitation tokens, email addresses, RDS IAM auth-token signatures, refresh tokens, request bodies or headers |
+| Retention | 7 / 14 / 7 days, as configured |
+
+Logging was not made more verbose for validation.
+
+### 16.8 IAM and security
+
+IAM policy simulator results against the deployed roles (identity policies):
+
+| Role | Allowed | Denied |
+|---|---|---|
+| `fieldmate-github-deploy` | `ssm:GetParameter` on `/fieldmate/dev/…`; `GetParametersByPath` under `/fieldmate/dev`; `iam:CreateRole` on `fieldmate-*` | **Explicit** deny: `GetParameter`/`GetParametersByPath` outside `/fieldmate/*`; `PutParameter`, `DeleteParameter`; `secretsmanager:GetSecretValue`, `CreateSecret`. Implicit: IAM roles not named `fieldmate-*`, `iam:CreateUser` |
+| `fieldmate-api-dev` | `rds-db:connect` as `fieldmate_app` only | `rds-db:connect` as `fieldmate_owner`; SSM; Secrets Manager; invoking db-ops; Cognito admin |
+| `fieldmate-db-ops-dev` | (password from the payload) | SSM; `rds-db:connect`; Secrets Manager |
+| `fieldmate-pre-token-dev` | Its own log group | SSM; `rds-db:connect` |
+
+Gateway and token rejections, cross-organisation denial and database roles behaved as designed (§16.4).
+
+**Broader than necessary (recorded, not changed):**
+- The deploy role's `PowerUserAccess` (S2).
+- The AWS-managed `AWSLambdaVPCAccessExecutionRole` on the API and db-ops roles, which allows `logs:*` writes on any log group and ENI management on `*`; a scoped policy could replace it.
+- Outside FieldMate's code, the `pptk-dev` operator IAM user has `AdministratorAccess` with long-lived access keys, and the account's Lambda concurrency limit is 10 (relevant before production).
+
+### 16.9 Dev database lifecycle (`dev-database.sh`, ADR-006)
+
+| Operation | Time | Result |
+|---|---|---|
+| stop | request 5 s; `stopped` after **6 min 31 s** | `/health` stayed 200; database-backed calls returned a generic 500 after about 10 s (fail closed, no data) |
+| start | **6 min 39 s** | Application working; data intact |
+| park | **4 min 40 s** | Final snapshot `fieldmate-postgres-dev-park-20261011-204229`, instance deleted, two-newest retention applied |
+| restore | **8 min 37 s** (`terraform apply` with the newest park snapshot, as the deploy workflow does; includes Terraform resetting the owner password) | Migrations 1–4 present; all three users' contexts intact; isolation enforced; smoke test passed |
+
+**Cold-connection finding (defect 5).** The first IAM-authenticated connections to a database that has just been
+created, started or restored took **7–10 s**:
+
+| Situation | First request |
+|---|---|
+| After the initial create | 7.3 s |
+| After start | first timed out at the 10 s connect timeout (500); the next took 9.9 s |
+| After restore | 9.2 s |
+| Instance already warm, new Lambda environment | 1.9 s |
+| db-ops password login right after the restore | well under 5 s |
+
+Once warm, requests take milliseconds. The smoke test now waits for the database path (§16.11). A developer's first
+request after a dev start can still fail once; production is never stopped.
+
+### 16.10 Scripts
+
+| Script | Result on AWS (Git Bash, Windows) |
+|---|---|
+| `run-db-ops.sh` | migrate, status and create-invitation; exit 0; no secrets in output. Needed defects 2–4 fixed |
+| `smoke-test.sh` | Four passes; exit 0; failure messages name the failing check. Needed defects 2 and 5 fixed |
+| `dev-database.sh` | status, stop, start and park; exit 0. Needed defect 2 fixed |
+
+The fixes are no-ops on Linux: stripping CR from output, disabling MSYS path conversion for one call, using
+relative temp-file paths, and a fixed foreign-organisation UUID instead of `/proc` or `uuidgen`. The scripts have
+not yet run on Linux against AWS (§12).
+
+### 16.11 Defects found and fixed
+
+| # | Defect | Fix | Commit |
+|---|---|---|---|
+| 1 | **A new environment could never be created**: the user pool set its passkey relying-party ID to its own prefix domain, which Cognito rejects until the domain exists, and the domain needs the pool | Leave the relying-party ID unset; Cognito defaults it to the prefix domain (verified in §16.6). The mock-provider plan tests cannot reproduce this API check | `18f1852` |
+| 2 | Scripts under Git Bash: `aws`/`jq` output ended in CR; `fileb://` could not read MSYS temp paths; no `/proc` UUID or `uuidgen` | CR-stripping wrappers; relative paths from the temp directory; fixed never-assigned UUID | `e7cced9` |
+| 3 | Git Bash rewrote the `/fieldmate/...` parameter name into a Windows path (`ParameterNotFound`) | `MSYS_NO_PATHCONV=1` for that call only | `68f852d` |
+| 4 | **Invitation-token redaction did not work**: db-ops returns `InvitationToken` (PascalCase) but the script deleted `.invitationToken`, so CI output would have kept a one-time token | Use the real property name; a unit test pins it | `68f852d` |
+| 5 | The first IAM-authenticated database connections after a start or restore exceed the API's 10 s connect timeout, so the deploy pipeline's smoke test could fail on a healthy environment | `smoke-test.sh` retries a database-backed call on 5xx (6 × 5 s) before asserting. Reproduced after a reboot: attempt 1 returned 500, then passed | `9666232` |
+
+CI passed after every fix. Application code is unchanged by the cycle.
+
+**Observations not changed:**
+- `infra/terraform/stack/env/dev.tfvars` still describes an older policy ("parked by default", `dev-park.yml`). The approved policy is the one in §7, implemented in `dev-cost-control.yml`.
+- §16.8 lists IAM grants broader than necessary.
+
+### 16.12 Teardown
+
+| Item | Result |
+|---|---|
+| `terraform destroy` (dev stack) | **46 destroyed** in 23 min 51 s; 0 resources left in state. RDS deletion took 1 min 51 s (no final snapshot in dev). The rest was AWS releasing the db-ops Lambda's VPC network interfaces (about 20 minutes, free) before the subnets and security groups could go |
+| Park snapshot | Deleted. No FieldMate snapshots or retained automated backups remain |
+| Post-teardown sweep | 0 RDS instances, Lambda functions, HTTP APIs, Cognito pools, FieldMate log groups, VPC or ENIs |
+| Test data | Cognito users and the validation organisations were removed with the pool and the database. Local test credentials and invitation tokens were deleted |
+
+**Retained** (near-zero, intentionally persistent):
+- The state bucket: one 718-byte dev state object plus versions.
+- The OIDC provider and the `fieldmate-github-deploy` role with its policies.
+- The two owner-password parameters.
+- The GitHub variables, environments and `dev` smoke secrets.
+- The git-ignored local bootstrap state.
+
+The next deployment recreates dev, with an empty database because no park snapshot is kept.
+
+### 16.13 Cost
+
+Rates are approximate eu-west-2 on-demand rates, not taken from billing data, which lags by about a day.
+
+| Resource | Existed | Approximate cost |
+|---|---|---|
+| RDS `db.t4g.micro` | about 49 min (first instance, excluding the stopped interval) + 17 min (restored instance) | about $0.02 |
+| RDS storage, 20 GiB gp3 | about 70 min in total, including the stopped interval | under $0.01 |
+| Park snapshot | about 21 min | under $0.01 |
+| Lambda, API Gateway, Cognito (3 users), CloudWatch Logs, Parameter Store, KMS (`aws/ssm`) | the cycle | $0 (free tiers) |
+| **Validation cycle total** | 19:54–21:30 UTC | **about $0.03 (well under $0.10)** |
+
+**Ongoing idle cost after teardown: about $0/month.** The state bucket holds kilobytes; Parameter Store standard,
+IAM and OIDC are free.
