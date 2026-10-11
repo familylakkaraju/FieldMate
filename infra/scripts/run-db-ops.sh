@@ -6,6 +6,10 @@
 # The password lives only in memory and in a 0600 temp file removed on exit; it is never printed.
 set -euo pipefail
 
+# Windows-native aws/jq (e.g. under Git Bash) end lines with CRLF: strip the CR so values compare exactly.
+aws() { command aws "$@" | tr -d '\r'; }
+jq() { command jq "$@" | tr -d '\r'; }
+
 function_name="$1"
 password_parameter="$2"
 operation_json="$3"
@@ -20,8 +24,9 @@ if [[ -n "${GITHUB_ACTIONS:-}" ]]; then echo "::add-mask::$password"; fi
 jq -n --argjson operation "$operation_json" --arg password "$password" '$operation + {password: $password}' > "$tmp/payload.json"
 unset password
 
-function_error="$(aws lambda invoke --function-name "$function_name" --payload "fileb://$tmp/payload.json" \
-  --cli-read-timeout 330 "$tmp/response.json" --query FunctionError --output text)"
+# Relative paths from inside the temp directory: a Windows-native aws.exe cannot open MSYS paths like fileb:///tmp/...
+function_error="$(cd "$tmp" && aws lambda invoke --function-name "$function_name" --payload fileb://payload.json \
+  --cli-read-timeout 330 response.json --query FunctionError --output text)"
 
 if [[ "$function_error" != "None" ]]; then
   echo "db-ops failed:" >&2

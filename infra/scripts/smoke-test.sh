@@ -7,6 +7,10 @@
 set -euo pipefail
 : "${API_URL:?}" "${SMOKE_CLIENT_ID:?}" "${SMOKE_USERNAME:?}" "${SMOKE_PASSWORD:?}" "${SMOKE_IDEMPOTENCY_KEY:?}"
 
+# Windows-native aws/jq (e.g. under Git Bash) end lines with CRLF: strip the CR so values and headers stay exact.
+aws() { command aws "$@" | tr -d '\r'; }
+jq() { command jq "$@" | tr -d '\r'; }
+
 api="${API_URL%/}"
 correlation="smoke-$(date +%s)-$RANDOM"
 
@@ -48,7 +52,8 @@ request GET /me/context "$organisation"
 expect 200 "$status" "GET /me/context with a validated organisation"
 expect OWNER "$(jq -r .role <<< "$json")" "trusted context role"
 
-request GET /me/context "$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen)"
+# A well-formed organisation ID that FieldMate never assigns (it generates UUIDv7), so it is always foreign.
+request GET /me/context "00000000-0000-4000-8000-000000000001"
 expect 403 "$status" "an unrelated organisation is denied"
 expect ORG_MEMBERSHIP_DENIED "$(jq -r .errorCode <<< "$json")" "denial error code"
 

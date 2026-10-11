@@ -10,6 +10,9 @@
 # Restoring a parked database is done by the next deployment (newest park snapshot). Never used for production.
 set -euo pipefail
 
+# Windows-native aws (e.g. under Git Bash) ends lines with CRLF: strip the CR so states compare exactly.
+aws() { command aws "$@" | tr -d '\r'; }
+
 action="${1:?usage: dev-database.sh <status|start|stop|park> <environment>}"
 environment="${2:?usage: dev-database.sh <status|start|stop|park> <environment>}"
 if [[ "$environment" == "prod" ]]; then
