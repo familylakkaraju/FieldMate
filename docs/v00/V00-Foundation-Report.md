@@ -7,7 +7,7 @@
 | Status | State |
 |---|---|
 | **Implementation** | **Complete** for V00 scope, including amendments A1–A5 |
-| **Local validation** | **Passed**: Release build, 99/99 tests (46 unit, 53 integration on real PostgreSQL 17.11), format, Terraform validate and offline plan tests, actionlint, documentation link check (§11) |
+| **Local validation** | **Passed**: Release build, 99/99 tests (32 unit, 67 integration on real PostgreSQL 17.11), format, Terraform validate and offline plan tests, actionlint, documentation link check (§11) |
 | **Feature branch** | Pushed to `origin/cr/fm-v00-foundation`. **Main merge not yet approved** |
 | **AWS deployment** | **Not started**: no AWS credentials were available. Nothing has run on AWS |
 | **Environment acceptance** | **Not started**: the Phase 8 chain is automated in `infra/scripts/smoke-test.sh`, pending the first dev deployment (§12, §14) |
@@ -223,7 +223,7 @@ endpoints (about $7/month per AZ) exist in any environment.
 
 ## 10. Test results
 
-Local run on Windows, Release build, PostgreSQL 17.11: **99 passed, 0 failed, 0 skipped** (46 unit, 53 integration).
+Local run on Windows, Release build, PostgreSQL 17.11: **99 passed, 0 failed, 0 skipped** (32 unit, 67 integration).
 
 | Category | Coverage |
 |---|---|
