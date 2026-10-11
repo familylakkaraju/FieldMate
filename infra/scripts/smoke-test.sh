@@ -40,6 +40,17 @@ token="$(aws cognito-idp initiate-auth --client-id "$SMOKE_CLIENT_ID" --auth-flo
 if [[ -n "${GITHUB_ACTIONS:-}" ]]; then echo "::add-mask::$token"; fi
 echo "ok: Cognito issued an access token"
 
+# A just-started or restored dev database takes about 10 s to accept its first IAM-authenticated connections, so the
+# API's first requests can fail with 500 (seen on AWS). Wait, bounded, until a database-backed call answers below 500.
+for attempt in 1 2 3 4 5 6; do
+  request GET /me
+  [[ "$status" -lt 500 ]] && break
+  echo "waiting for the database path (attempt $attempt: $status)"
+  sleep 5
+done
+[[ "$status" -lt 500 ]] || { echo "FAIL: the API could not reach the database ($status)" >&2; exit 1; }
+echo "ok: the API reaches the database"
+
 request POST /onboarding/create-business "" '{"name":"Smoke Test Organisation"}'
 [[ "$status" == 200 || "$status" == 201 ]] || { echo "FAIL: create-business ($status) $json" >&2; exit 1; }
 organisation="$(jq -r .organisationId <<< "$json")"
