@@ -1,6 +1,7 @@
 # dev: lowest cost. Single-AZ db.t4g.micro, no RDS Proxy, no tracing, no alarms, 7-day logs.
-# The database is parked by default (snapshot + delete): deployments restore it and park it again, and
-# .github/workflows/dev-park.yml parks anything left running every evening.
+# Database lifecycle (FM-P04, ADR-006): a deployment restores a parked database from its newest park snapshot (or
+# starts a stopped one), migrates, smoke tests, then stops it. .github/workflows/dev-cost-control.yml stops it every
+# evening (19:00 UTC Saturday-Thursday) and parks it on Fridays (final snapshot, delete, keep the two newest).
 environment = "dev"
 
 db_instance_class        = "db.t4g.micro"
