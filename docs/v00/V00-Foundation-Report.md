@@ -9,8 +9,8 @@
 | **Implementation** | **Complete** for V00 scope, including amendments A1–A5 |
 | **Local validation** | **Passed**: Release build, 100/100 tests (33 unit, 67 integration on real PostgreSQL 17), format, Terraform validate and offline plan tests, actionlint, documentation link check (§11) |
 | **Feature branch** | Pushed to `origin/cr/fm-v00-foundation`. **Merge to `main` approved** by the owner (2026-10-11) |
-| **AWS deployment** | **Dev validated, then torn down** (2026-10-11, eu-west-2, manual runbook): deploy, migrate, smoke test, acceptance checks, stop/start/park/restore. Five defects found and fixed (§16) |
-| **Environment acceptance** | **Dev accepted** by the owner (2026-10-11); teardown verified (§16.12). Deferred: passkey through managed login in a real browser (to a future natural deployment), Google and Entra (no credentials). The deploy workflow first runs on merge (§12) |
+| **AWS deployment** | **Dev validated, then torn down** (2026-10-11, eu-west-2, manual runbook): deploy, migrate, smoke test, acceptance checks, stop/start/park/restore. Five defects found and fixed (§16). **Everything since removed, including the bootstrap: FieldMate has no AWS resources and $0/month AWS cost** (§16.12) |
+| **Environment acceptance** | **Dev accepted** by the owner (2026-10-11); teardown verified (§16.12). Deferred: passkey through managed login in a real browser (to a future natural deployment), Google and Entra (no credentials). The deploy workflow ran once on the merge and failed at AWS sign-in; nothing was created (§12) |
 | **Production acceptance** | **Not started**: also requires the production hardening items in §9 |
 
 V00 is **not** production-ready. It is the accepted foundation baseline: dev validation on AWS passed (§16) and was
@@ -255,7 +255,8 @@ probe test. The team-listing isolation test was removed with the endpoint.
 
 ## 12. AWS deployment status
 
-**Dev was deployed, validated and torn down on 2026-10-11** (§16). Proven on AWS:
+**Dev was deployed, validated and torn down on 2026-10-11** (§16). The bootstrap was removed the same day, so
+FieldMate has no AWS resources; any future AWS work starts by running the bootstrap again (§16.12). Proven on AWS:
 - Cognito native password sign-in, TOTP MFA and passkey (WebAuthn) sign-in through Cognito's APIs.
 - The API Gateway JWT authorizer with real Cognito tokens, and the pre-token-generation trigger claims.
 - The Lambda in private subnets reaching RDS with IAM authentication.
@@ -267,7 +268,7 @@ probe test. The team-listing isolation test was removed with the endpoint.
 **Not yet proven:**
 - Google and Microsoft/Entra federated sign-in (no credentials provisioned).
 - Passkey enrolment and sign-in through managed login in a real browser with a platform authenticator (deferred to a future natural deployment).
-- The `backend-deploy.yml` and `dev-cost-control.yml` workflows themselves: they run from `main`, so dev was deployed with the manual runbook. This also means the scripts have not yet run on Linux.
+- The `backend-deploy.yml` and `dev-cost-control.yml` workflows themselves: they run from `main`, so dev was deployed with the manual runbook. The deploy workflow ran once on the merge and failed at AWS sign-in (`sts:AssumeRoleWithWebIdentity` not authorized) before Terraform started, so nothing was created. The cause was not investigated because no deployment is wanted, and the role no longer exists. This also means the scripts have not yet run on Linux against AWS.
 - RDS Proxy with end-to-end IAM authentication (production configuration), and any production deployment.
 
 ## 13. Deviations from the CR and X-Ray
@@ -360,9 +361,11 @@ No secrets, tokens or invitation tokens are reproduced here; identifiers belong 
 | Account / region | `pptk-dev` (327260351722) / eu-west-2 London |
 | Method | Manual runbook from a Windows workstation (Terraform 1.16.5, AWS CLI v2, Git Bash). The deploy workflow runs from `main`, so it was not used; no temporary deployment mechanism was added |
 | Code | `cr/fm-v00-foundation`; Lambda packages from the branch's CI artifacts (backend code unchanged during the cycle) |
-| Timeline (UTC) | Bootstrap and GitHub configuration before 19:53; deploy 19:54; validation until 21:04; teardown from 21:05 |
+| Timeline (UTC) | Bootstrap and GitHub configuration before 19:53; deploy 19:54; validation until 21:04; teardown from 21:05; bootstrap removed at 22:59, after the merge |
 
 ### 16.1 Bootstrap and GitHub configuration
+
+These AWS resources were all removed after the merge (§16.12).
 
 | Created | Resources |
 |---|---|
@@ -536,15 +539,22 @@ CI passed after every fix. Application code is unchanged by the cycle.
 | Post-teardown sweep | 0 RDS instances, Lambda functions, HTTP APIs, Cognito pools, FieldMate log groups, VPC or ENIs |
 | Test data | Cognito users and the validation organisations were removed with the pool and the database. Local test credentials and invitation tokens were deleted |
 | Teardown verification | **Passed**: a separate read-only audit, directly against AWS rather than Terraform state, of all 20 resource categories in eu-west-2, plus a FieldMate tag sweep of all 17 regions. Zero unexpected FieldMate resources; tag-index entries for deleted resources were confirmed gone. Unrelated `AccessCore-dev` resources from another project were left untouched |
+| Bootstrap removal (2026-10-11 22:59 UTC, after the merge, at the owner's request for zero AWS cost) | `terraform destroy` of the bootstrap: **13 destroyed**, 0 left in its local state. Removed: the Terraform state bucket, after deleting its 24 stored object versions and delete markers (only the empty dev state and lock-file history; no prod state existed); the `/fieldmate/dev/...` and `/fieldmate/prod/...` owner-password parameters; the `fieldmate-github-deploy` role, with its `PowerUserAccess` attachment and both inline policies; and FieldMate's GitHub OIDC provider (no other role used it) |
+| Final verification | The same direct audit afterwards: **zero FieldMate resources in AWS** in every category, including S3, Parameter Store and IAM. No V00 snapshots remain. The tag index still listed 7 deleted dev resources (2 user pools, a security group, 4 rules); each was confirmed not to exist. Unrelated `AccessCore-dev` resources were left untouched |
 
-**Retained** (near-zero, intentionally persistent):
-- The state bucket: one 718-byte dev state object plus versions.
-- The OIDC provider and the `fieldmate-github-deploy` role with its policies.
-- The two owner-password parameters.
-- The GitHub variables, environments and `dev` smoke secrets.
-- The git-ignored local bootstrap state.
+**Retained in AWS: nothing.** FieldMate's AWS cost is **$0/month**.
 
-The next deployment recreates dev, with an empty database because no park snapshot is kept.
+**Future AWS work** requires running the bootstrap again ([runbook §1](../../infra/README.md#1-bootstrap-once-per-aws-account-by-an-administrator))
+before any deployment, and only with the owner's explicit approval. The first deployment after that creates dev with
+an empty database.
+
+**Workflow status.** GitHub still holds the repository variables `AWS_DEPLOY_ROLE_ARN`, `TF_STATE_BUCKET` and
+`AWS_REGION`, the `dev` and `prod` environments, and the `dev` secrets `SMOKE_USERNAME` and `SMOKE_PASSWORD`. These
+point to deleted AWS infrastructure.
+- `backend-deploy.yml` and `dev-cost-control.yml` must stay **disabled in GitHub Actions** until the bootstrap is intentionally recreated.
+- Their workflow files are unchanged, so they remain valid for future use.
+- They were still enabled when this was written (2026-10-12). While enabled, they fail at AWS sign-in (the deploy role no longer exists) and cannot create anything.
+- The only local trace is the empty, git-ignored bootstrap state file.
 
 ### 16.13 Cost
 
@@ -558,5 +568,4 @@ Rates are approximate eu-west-2 on-demand rates, not taken from billing data, wh
 | Lambda, API Gateway, Cognito (3 users), CloudWatch Logs, Parameter Store, KMS (`aws/ssm`) | the cycle | $0 (free tiers) |
 | **Validation cycle total** | 19:54–21:30 UTC | **about $0.03 (well under $0.10)** |
 
-**Ongoing idle cost after teardown: about $0/month.** The state bucket holds kilobytes; Parameter Store standard,
-IAM and OIDC are free.
+**Ongoing AWS cost: $0/month.** Nothing FieldMate-related remains in AWS (§16.12).
